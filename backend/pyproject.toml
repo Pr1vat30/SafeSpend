@@ -1,0 +1,42 @@
+[project]
+name = "safespend-backend"
+version = "0.1.0"
+description = "SafeSpend backend API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.4",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# Keep `Generic[T]` for Pydantic generic models
+ignore = ["UP046"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's Depends()/Query() in defaults is the intended pattern
+"app/**" = ["B008"]
