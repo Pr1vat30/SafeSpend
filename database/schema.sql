@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS category CASCADE;
 DROP TABLE IF EXISTS financial_profile CASCADE;
 DROP TABLE IF EXISTS _user CASCADE;
 
+
 CREATE TABLE _user (
     id_user BIGINT GENERATED ALWAYS AS IDENTITY,
     name VARCHAR(100) NOT NULL,
@@ -28,6 +29,7 @@ CREATE TABLE _user (
     CONSTRAINT chk_user_email CHECK (btrim(email) <> ''),
     CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
+
 
 CREATE TABLE financial_profile (
     id_user BIGINT,
