@@ -9,9 +9,6 @@ DROP TABLE IF EXISTS balance_snapshot CASCADE;
 DROP TABLE IF EXISTS category CASCADE;
 DROP TABLE IF EXISTS financial_profile CASCADE;
 DROP TABLE IF EXISTS _user CASCADE;
-DROP TABLE IF EXISTS user_badge CASCADE;
-DROP TABLE IF EXISTS badge CASCADE;
-
 
 
 CREATE TABLE _user (
@@ -20,7 +17,6 @@ CREATE TABLE _user (
     surname VARCHAR(100) NOT NULL,
     email VARCHAR(254) NOT NULL UNIQUE,
     password TEXT NOT NULL,
-    is_adult_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
     privacy_accepted_at TIMESTAMPTZ NOT NULL,
     disclaimer_accepted_at TIMESTAMPTZ NOT NULL,
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
@@ -31,7 +27,6 @@ CREATE TABLE _user (
     CONSTRAINT chk_user_name CHECK (btrim(name) <> ''),
     CONSTRAINT chk_user_surname CHECK (btrim(surname) <> ''),
     CONSTRAINT chk_user_email CHECK (btrim(email) <> ''),
-    CONSTRAINT chk_user_adult CHECK (is_adult_confirmed = TRUE),
     CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
 
@@ -53,7 +48,7 @@ CREATE TABLE financial_profile (
 
 CREATE TABLE category (
     id_category BIGINT GENERATED ALWAYS AS IDENTITY,
-    id_user BIGINT, -- NULL per le categorie standard di sistema
+    id_user BIGINT,
     name VARCHAR(100) NOT NULL,
     type VARCHAR(10) NOT NULL DEFAULT 'expense',
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
@@ -93,7 +88,7 @@ CREATE TABLE recurring_rule (
     id_recurring_rule BIGINT GENERATED ALWAYS AS IDENTITY,
     id_user BIGINT NOT NULL,
     id_category BIGINT NOT NULL,
-    id_goal BIGINT, -- Collegamento opzionale se la voce è un accantonamento per un obiettivo
+    id_goal BIGINT,
     name VARCHAR(100) NOT NULL,
     type VARCHAR(10) NOT NULL,
     amount NUMERIC(12,2) NOT NULL,
@@ -123,7 +118,6 @@ CREATE TABLE planned_transaction (
     type VARCHAR(10) NOT NULL,
     amount NUMERIC(12,2) NOT NULL,
     planned_date DATE NOT NULL,
-    origin VARCHAR(20) NOT NULL DEFAULT 'manual',
     status VARCHAR(25) NOT NULL DEFAULT 'planned',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -133,16 +127,15 @@ CREATE TABLE planned_transaction (
     CONSTRAINT chk_planned_name CHECK (btrim(name) <> ''),
     CONSTRAINT chk_planned_type CHECK (type IN ('income', 'expense')),
     CONSTRAINT chk_planned_amount CHECK (amount > 0 AND amount <> 'NaN'::numeric),
-    CONSTRAINT chk_planned_origin CHECK (origin IN ('manual', 'simulator')),
     CONSTRAINT chk_planned_status CHECK (status IN ('planned', 'pending_confirmation', 'recorded', 'cancelled'))
 );
 
 CREATE TABLE transaction (
     id_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
     id_user BIGINT NOT NULL,
-    id_category BIGINT, -- Può essere NULL per transazioni di tipo 'adjustment'
-    id_recurring_rule BIGINT, -- Se generata dallo Scheduler da una voce ricorrente
-    id_planned_transaction BIGINT, -- Se generata da un movimento pianificato
+    id_category BIGINT,
+    id_recurring_rule BIGINT,
+    id_planned_transaction BIGINT,
     description VARCHAR(140),
     type VARCHAR(15) NOT NULL,
     amount NUMERIC(12,2) NOT NULL,
@@ -165,7 +158,7 @@ CREATE TABLE transaction (
 CREATE TABLE balance_snapshot (
     id_snapshot BIGINT GENERATED ALWAYS AS IDENTITY,
     id_user BIGINT NOT NULL,
-    id_adjustment_transaction BIGINT, -- Collegamento alla transazione di Rettifica generata se vi è differenza
+    id_adjustment_transaction BIGINT, 
     real_balance NUMERIC(12,2) NOT NULL,
     calculated_balance NUMERIC(12,2) NOT NULL,
     reconciliation_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -194,29 +187,7 @@ CREATE TABLE alert (
     CONSTRAINT chk_alert_status CHECK (status IN ('active', 'read', 'resolved')),
     CONSTRAINT chk_alert_message CHECK (btrim(message) <> '')
 );
-/*
-CREATE TABLE badge (
-    badge_code VARCHAR(50) NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    description TEXT NOT NULL,
-    icon_url TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT pk_badge PRIMARY KEY (badge_code),
-    CONSTRAINT chk_badge_name CHECK (btrim(name) <> ''),
-    CONSTRAINT chk_badge_icon CHECK (btrim(icon_url) <> '')
-);
 
-CREATE TABLE user_badge (
-    id_user BIGINT NOT NULL,
-    badge_code VARCHAR(50) NOT NULL,
-    unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT pk_user_badge PRIMARY KEY (id_user, badge_code),
-    CONSTRAINT fk_badge_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
-    CONSTRAINT fk_badge_catalog FOREIGN KEY (badge_code) REFERENCES badge (badge_code) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_user_badge_user ON user_badge (id_user);
-*/
 CREATE INDEX idx_transaction_user_date ON transaction (id_user, transaction_date DESC);
 CREATE INDEX idx_recurring_user_status ON recurring_rule (id_user, status);
 CREATE INDEX idx_planned_user_date ON planned_transaction (id_user, planned_date, status);
