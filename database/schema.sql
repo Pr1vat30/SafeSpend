@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS user_badge CASCADE;
 DROP TABLE IF EXISTS badge CASCADE;
 
 
+
 CREATE TABLE _user (
     id_user BIGINT GENERATED ALWAYS AS IDENTITY,
     name VARCHAR(100) NOT NULL,
@@ -33,6 +34,7 @@ CREATE TABLE _user (
     CONSTRAINT chk_user_adult CHECK (is_adult_confirmed = TRUE),
     CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
+
 
 CREATE TABLE financial_profile (
     id_user BIGINT,
