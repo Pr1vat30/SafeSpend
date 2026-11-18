@@ -1,160 +1,226 @@
 BEGIN;
 
-DROP TABLE IF EXISTS user_data CASCADE;
-DROP TABLE IF EXISTS achievements CASCADE;
-DROP TABLE IF EXISTS goal CASCADE;
+DROP TABLE IF EXISTS alert CASCADE;
+DROP TABLE IF EXISTS planned_transaction CASCADE;
 DROP TABLE IF EXISTS transaction CASCADE;
-DROP TABLE IF EXISTS frequency CASCADE;
+DROP TABLE IF EXISTS recurring_rule CASCADE;
+DROP TABLE IF EXISTS goal CASCADE;
+DROP TABLE IF EXISTS balance_snapshot CASCADE;
 DROP TABLE IF EXISTS category CASCADE;
 DROP TABLE IF EXISTS financial_profile CASCADE;
 DROP TABLE IF EXISTS _user CASCADE;
+DROP TABLE IF EXISTS user_badge CASCADE;
+DROP TABLE IF EXISTS badge CASCADE;
+
 
 
 CREATE TABLE _user (
     id_user BIGINT GENERATED ALWAYS AS IDENTITY,
     name VARCHAR(100) NOT NULL,
     surname VARCHAR(100) NOT NULL,
-    nickname VARCHAR(100) NOT NULL UNIQUE,
     email VARCHAR(254) NOT NULL UNIQUE,
     password TEXT NOT NULL,
+    is_adult_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    privacy_accepted_at TIMESTAMPTZ NOT NULL,
+    disclaimer_accepted_at TIMESTAMPTZ NOT NULL,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT pk_user PRIMARY KEY (id_user),
     CONSTRAINT chk_user_name CHECK (btrim(name) <> ''),
     CONSTRAINT chk_user_surname CHECK (btrim(surname) <> ''),
-    CONSTRAINT chk_user_nickname CHECK (btrim(nickname) <> ''),
     CONSTRAINT chk_user_email CHECK (btrim(email) <> ''),
-    CONSTRAINT chk_user_password CHECK (btrim(password) <> '')
+    CONSTRAINT chk_user_adult CHECK (is_adult_confirmed = TRUE),
+    CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
 
 
 CREATE TABLE financial_profile (
     id_user BIGINT,
-    balance NUMERIC(12,2) NOT NULL,
     safety_buffer NUMERIC(12,2) NOT NULL DEFAULT 0,
-    periodic_payments NUMERIC(12,2) NOT NULL DEFAULT 0,
-    monthly_income NUMERIC(12,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    horizon_days INTEGER NOT NULL DEFAULT 30,
+    estimated_variable_expenses NUMERIC(12,2) NOT NULL DEFAULT 0,
+    ai_consent BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT pk_financial_profile PRIMARY KEY (id_user),
     CONSTRAINT fk_profile_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
-    CONSTRAINT chk_profile_balance CHECK (balance <> 'NaN'::numeric),
     CONSTRAINT chk_profile_safety_buffer CHECK (safety_buffer >= 0 AND safety_buffer <> 'NaN'::numeric),
-    CONSTRAINT chk_profile_periodic_payments CHECK (periodic_payments >= 0 AND periodic_payments <> 'NaN'::numeric),
-    CONSTRAINT chk_profile_monthly_income CHECK (monthly_income >= 0 AND monthly_income <> 'NaN'::numeric)
+    CONSTRAINT chk_profile_horizon CHECK (horizon_days IN (30, 60, 90)),
+    CONSTRAINT chk_profile_variable_exp CHECK (estimated_variable_expenses >= 0 AND estimated_variable_expenses <> 'NaN'::numeric)
 );
 
 CREATE TABLE category (
     id_category BIGINT GENERATED ALWAYS AS IDENTITY,
+    id_user BIGINT, -- NULL per le categorie standard di sistema
     name VARCHAR(100) NOT NULL,
-    description TEXT,
+    type VARCHAR(10) NOT NULL DEFAULT 'expense',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT pk_category PRIMARY KEY (id_category),
-    CONSTRAINT chk_category_name CHECK (btrim(name) <> '')
+    CONSTRAINT fk_category_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT chk_category_name CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_category_type CHECK (type IN ('income', 'expense', 'both')),
+    CONSTRAINT chk_category_system_user CHECK (
+    (is_default = TRUE AND id_user IS NULL) OR
+    (is_default = FALSE AND id_user IS NOT NULL)
+    )
 );
-
-CREATE TABLE frequency (
-    id_frequency BIGINT GENERATED ALWAYS AS IDENTITY,
-    transaction_count INTEGER NOT NULL DEFAULT 0,
-    frequency_type VARCHAR(10) NOT NULL,
-    next_occurrence_date DATE,
-    end_date DATE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT pk_frequency PRIMARY KEY (id_frequency),
-    CONSTRAINT chk_frequency_count CHECK (transaction_count >= 0),
-    CONSTRAINT chk_frequency_type CHECK (frequency_type IN ('daily', 'weekly', 'monthly', 'yearly')),
-    CONSTRAINT chk_frequency_next_date CHECK (next_occurrence_date IS NULL OR end_date IS NULL OR next_occurrence_date <= end_date)
-);
-
-CREATE TABLE transaction (
-    id_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
-    id_user BIGINT NOT NULL,
-    id_category BIGINT NOT NULL,
-    id_frequency BIGINT,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    amount NUMERIC(12,2) NOT NULL,
-    transaction_date DATE NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT pk_transaction PRIMARY KEY (id_transaction),
-    CONSTRAINT fk_transaction_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
-    CONSTRAINT fk_transaction_category FOREIGN KEY (id_category) REFERENCES category (id_category),
-    CONSTRAINT fk_transaction_frequency FOREIGN KEY (id_frequency) REFERENCES frequency (id_frequency) ON DELETE SET NULL,
-    CONSTRAINT chk_transaction_name CHECK (btrim(name) <> ''),
-    CONSTRAINT chk_transaction_amount CHECK (amount <> 0 AND amount <> 'NaN'::numeric)
-);
-
 
 CREATE TABLE goal (
     id_goal BIGINT GENERATED ALWAYS AS IDENTITY,
     id_user BIGINT NOT NULL,
     name VARCHAR(100) NOT NULL,
-    description TEXT,
-    amount NUMERIC(12,2) NOT NULL,
-    amount_saved NUMERIC(12,2) NOT NULL DEFAULT 0,
+    target_amount NUMERIC(12,2) NOT NULL,
+    deadline DATE NOT NULL,
+    installment_frequency VARCHAR(10) NOT NULL,
+    installment_amount NUMERIC(12,2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT pk_goal PRIMARY KEY (id_goal),
     CONSTRAINT fk_goal_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
     CONSTRAINT chk_goal_name CHECK (btrim(name) <> ''),
-    CONSTRAINT chk_goal_amount CHECK (amount > 0 AND amount <> 'NaN'::numeric),
-    CONSTRAINT chk_goal_amount_saved CHECK (amount_saved >= 0 AND amount_saved <> 'NaN'::numeric)
+    CONSTRAINT chk_goal_target_amount CHECK (target_amount > 0 AND target_amount <> 'NaN'::numeric),
+    CONSTRAINT chk_goal_installment_amount CHECK (installment_amount > 0 AND installment_amount <= target_amount AND installment_amount <> 'NaN'::numeric),
+    CONSTRAINT chk_goal_installment_frequency CHECK (installment_frequency IN ('weekly', 'monthly')),
+    CONSTRAINT chk_goal_status CHECK (status IN ('active', 'completed', 'suspended', 'expired'))
 );
 
-CREATE TABLE achievements (
-    id_achievement BIGINT GENERATED ALWAYS AS IDENTITY,
+CREATE TABLE recurring_rule (
+    id_recurring_rule BIGINT GENERATED ALWAYS AS IDENTITY,
     id_user BIGINT NOT NULL,
+    id_category BIGINT NOT NULL,
+    id_goal BIGINT, -- Collegamento opzionale se la voce è un accantonamento per un obiettivo
     name VARCHAR(100) NOT NULL,
-    description TEXT NOT NULL,
-    badge TEXT,
-    completion_percent INTEGER NOT NULL DEFAULT 0,
-    completed BOOLEAN NOT NULL DEFAULT FALSE,
-    completed_at TIMESTAMPTZ,
+    type VARCHAR(10) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    frequency VARCHAR(10) NOT NULL,
+    first_occurrence_date DATE NOT NULL,
+    end_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT pk_achievement PRIMARY KEY (id_achievement),
-    CONSTRAINT fk_achievement_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
-    CONSTRAINT chk_achievement_name CHECK (btrim(name) <> ''),
-    CONSTRAINT chk_achievement_description CHECK (btrim(description) <> ''),
-    CONSTRAINT chk_achievement_percentage CHECK (completion_percent BETWEEN 0 AND 100),
-    CONSTRAINT chk_achievement_completion CHECK (completed = (completion_percent = 100)),
-    CONSTRAINT chk_achievement_completed_at CHECK ((completed AND completed_at IS NOT NULL) OR (NOT completed AND completed_at IS NULL)),
-    CONSTRAINT chk_achievement_dates CHECK (completed_at IS NULL OR completed_at >= created_at)
+    CONSTRAINT pk_recurring_rule PRIMARY KEY (id_recurring_rule),
+    CONSTRAINT fk_rule_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT fk_rule_category FOREIGN KEY (id_category) REFERENCES category (id_category),
+    CONSTRAINT fk_rule_goal FOREIGN KEY (id_goal) REFERENCES goal (id_goal) ON DELETE SET NULL,
+    CONSTRAINT chk_rule_name CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_rule_type CHECK (type IN ('income', 'expense', 'saving')),
+    CONSTRAINT chk_rule_amount CHECK (amount > 0 AND amount <> 'NaN'::numeric),
+    CONSTRAINT chk_rule_frequency CHECK (frequency IN ('weekly', 'monthly', 'yearly')),
+    CONSTRAINT chk_rule_dates CHECK (end_date IS NULL OR first_occurrence_date <= end_date),
+    CONSTRAINT chk_rule_status CHECK (status IN ('active', 'suspended', 'terminated'))
 );
 
-CREATE TABLE user_data (
-    id_user BIGINT,
-    safety_buffer NUMERIC(12,2) NOT NULL DEFAULT 0,
-    budget_sts NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_expenses_this_week_count INTEGER NOT NULL DEFAULT 0,
-    total_expenses_last_week_count INTEGER NOT NULL DEFAULT 0,
-    total_expenses_this_week NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_expenses_last_week NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_income_this_week NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_income_last_week NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_active_debts NUMERIC(12,2) NOT NULL DEFAULT 0,
-    total_weekly_debt_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
-    active_savings_goals_count INTEGER NOT NULL DEFAULT 0,
-    completed_savings_goals_count INTEGER NOT NULL DEFAULT 0,
-    goal_transactions_this_week_count INTEGER NOT NULL DEFAULT 0,
-    goal_transactions_last_week_count INTEGER NOT NULL DEFAULT 0,
-    last_completed_achievements JSONB NOT NULL DEFAULT '[]'::jsonb,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+CREATE TABLE planned_transaction (
+    id_planned_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
+    id_user BIGINT NOT NULL,
+    id_category BIGINT NOT NULL,
+    name VARCHAR(140) NOT NULL,
+    type VARCHAR(10) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    planned_date DATE NOT NULL,
+    origin VARCHAR(20) NOT NULL DEFAULT 'manual',
+    status VARCHAR(25) NOT NULL DEFAULT 'planned',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    CONSTRAINT pk_user_data PRIMARY KEY (id_user),
-    CONSTRAINT fk_data_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
-    CONSTRAINT chk_data_safety_buffer CHECK (safety_buffer >= 0 AND safety_buffer <> 'NaN'::numeric),
-    CONSTRAINT chk_data_budget_sts CHECK (budget_sts >= 0 AND budget_sts <> 'NaN'::numeric),
-    CONSTRAINT chk_data_total_balance CHECK (total_balance <> 'NaN'::numeric),
-    CONSTRAINT chk_data_counts CHECK (total_expenses_this_week_count >= 0 AND total_expenses_last_week_count >= 0 AND active_savings_goals_count >= 0 AND completed_savings_goals_count >= 0 AND goal_transactions_this_week_count >= 0 AND goal_transactions_last_week_count >= 0),
-    CONSTRAINT chk_data_expenses CHECK (total_expenses_this_week >= 0 AND total_expenses_this_week <> 'NaN'::numeric AND total_expenses_last_week >= 0 AND total_expenses_last_week <> 'NaN'::numeric),
-    CONSTRAINT chk_data_income CHECK (total_income_this_week >= 0 AND total_income_this_week <> 'NaN'::numeric AND total_income_last_week >= 0 AND total_income_last_week <> 'NaN'::numeric),
-    CONSTRAINT chk_data_debts CHECK (total_active_debts >= 0 AND total_active_debts <> 'NaN'::numeric AND total_weekly_debt_balance >= 0 AND total_weekly_debt_balance <> 'NaN'::numeric),
-    CONSTRAINT chk_data_achievements CHECK (jsonb_typeof(last_completed_achievements) = 'array')
+    CONSTRAINT pk_planned_transaction PRIMARY KEY (id_planned_transaction),
+    CONSTRAINT fk_planned_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT fk_planned_category FOREIGN KEY (id_category) REFERENCES category (id_category),
+    CONSTRAINT chk_planned_name CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_planned_type CHECK (type IN ('income', 'expense')),
+    CONSTRAINT chk_planned_amount CHECK (amount > 0 AND amount <> 'NaN'::numeric),
+    CONSTRAINT chk_planned_origin CHECK (origin IN ('manual', 'simulator')),
+    CONSTRAINT chk_planned_status CHECK (status IN ('planned', 'pending_confirmation', 'recorded', 'cancelled'))
 );
+
+CREATE TABLE transaction (
+    id_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
+    id_user BIGINT NOT NULL,
+    id_category BIGINT, -- Può essere NULL per transazioni di tipo 'adjustment'
+    id_recurring_rule BIGINT, -- Se generata dallo Scheduler da una voce ricorrente
+    id_planned_transaction BIGINT, -- Se generata da un movimento pianificato
+    description VARCHAR(140),
+    type VARCHAR(15) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    transaction_date DATE NOT NULL,
+    origin VARCHAR(20) NOT NULL DEFAULT 'manual',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT pk_transaction PRIMARY KEY (id_transaction),
+    CONSTRAINT fk_transaction_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT fk_transaction_category FOREIGN KEY (id_category) REFERENCES category (id_category),
+    CONSTRAINT fk_transaction_rule FOREIGN KEY (id_recurring_rule) REFERENCES recurring_rule (id_recurring_rule) ON DELETE SET NULL,
+    CONSTRAINT fk_transaction_planned FOREIGN KEY (id_planned_transaction) REFERENCES planned_transaction (id_planned_transaction) ON DELETE SET NULL,
+    CONSTRAINT chk_transaction_type CHECK (type IN ('income', 'expense', 'adjustment')),
+    CONSTRAINT chk_transaction_amount CHECK (amount <> 0 AND amount <> 'NaN'::numeric),
+    CONSTRAINT chk_transaction_origin CHECK (origin IN ('manual', 'ocr', 'recurring', 'planned', 'reconciliation')),
+
+    CONSTRAINT uq_rule_occurrence UNIQUE (id_recurring_rule, transaction_date)
+);
+
+CREATE TABLE balance_snapshot (
+    id_snapshot BIGINT GENERATED ALWAYS AS IDENTITY,
+    id_user BIGINT NOT NULL,
+    id_adjustment_transaction BIGINT, -- Collegamento alla transazione di Rettifica generata se vi è differenza
+    real_balance NUMERIC(12,2) NOT NULL,
+    calculated_balance NUMERIC(12,2) NOT NULL,
+    reconciliation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT pk_balance_snapshot PRIMARY KEY (id_snapshot),
+    CONSTRAINT fk_snapshot_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT fk_snapshot_transaction FOREIGN KEY (id_adjustment_transaction) REFERENCES transaction (id_transaction) ON DELETE SET NULL,
+    CONSTRAINT chk_snapshot_real_balance CHECK (real_balance <> 'NaN'::numeric),
+    CONSTRAINT chk_snapshot_calc_balance CHECK (calculated_balance <> 'NaN'::numeric)
+);
+
+CREATE TABLE alert (
+    id_alert BIGINT GENERATED ALWAYS AS IDENTITY,
+    id_user BIGINT NOT NULL,
+    type VARCHAR(25) NOT NULL,
+    message TEXT NOT NULL,
+    trigger_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    status VARCHAR(15) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ,
+
+    CONSTRAINT pk_alert PRIMARY KEY (id_alert),
+    CONSTRAINT fk_alert_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT chk_alert_type CHECK (type IN ('risk_level', 'impending_expense', 'sts_drop')),
+    CONSTRAINT chk_alert_status CHECK (status IN ('active', 'read', 'resolved')),
+    CONSTRAINT chk_alert_message CHECK (btrim(message) <> '')
+);
+/*
+CREATE TABLE badge (
+    badge_code VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT NOT NULL,
+    icon_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_badge PRIMARY KEY (badge_code),
+    CONSTRAINT chk_badge_name CHECK (btrim(name) <> ''),
+    CONSTRAINT chk_badge_icon CHECK (btrim(icon_url) <> '')
+);
+
+CREATE TABLE user_badge (
+    id_user BIGINT NOT NULL,
+    badge_code VARCHAR(50) NOT NULL,
+    unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_user_badge PRIMARY KEY (id_user, badge_code),
+    CONSTRAINT fk_badge_user FOREIGN KEY (id_user) REFERENCES _user (id_user) ON DELETE CASCADE,
+    CONSTRAINT fk_badge_catalog FOREIGN KEY (badge_code) REFERENCES badge (badge_code) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_user_badge_user ON user_badge (id_user);
+*/
+CREATE INDEX idx_transaction_user_date ON transaction (id_user, transaction_date DESC);
+CREATE INDEX idx_recurring_user_status ON recurring_rule (id_user, status);
+CREATE INDEX idx_planned_user_date ON planned_transaction (id_user, planned_date, status);
+CREATE INDEX idx_alert_user_status ON alert (id_user, status);
+CREATE INDEX idx_snapshot_user_date ON balance_snapshot (id_user, reconciliation_date DESC);
 
 COMMIT;
