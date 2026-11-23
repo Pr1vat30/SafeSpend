@@ -1,0 +1,251 @@
+# CI di SafeSpend (C13_CMP, §3.3.5).
+# Parte a ogni pull request verso main e a ogni push su main. Avvia solo i job delle aree modificate;
+# il job finale "ci-ok" riassume l'esito ed è l'unico controllo obbligatorio nella protezione di main.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    name: Rileva le aree modificate
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      database: ${{ steps.filter.outputs.database }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'database/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/ci.yml'
+            database:
+              - 'database/schema.sql'
+              - '.github/workflows/ci.yml'
+            docker:
+              - 'docker-compose.yml'
+              - '**/Dockerfile'
+              - '**/.dockerignore'
+              - 'database/**'
+              - '.github/workflows/ci.yml'
+
+  backend:
+    name: Backend (ruff, pytest)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      # Database per i test che usano PostgreSQL; i test che non lo usano lo ignorano.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: safespend
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d safespend"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/safespend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Applica lo schema al database di test
+        working-directory: database
+        env:
+          PGHOST: localhost
+          PGPORT: 5433
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: safespend
+        run: psql -v ON_ERROR_STOP=1 -f schema.sql
+      - name: Installa le dipendenze
+        run: uv sync --frozen
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+      - name: Formattazione (ruff format)
+        run: uv run ruff format --check .
+      - name: Test (pytest)
+        run: uv run pytest
+
+  frontend:
+    name: Frontend (lint, typecheck, build)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Installa le dipendenze
+        run: npm ci
+      - name: Lint (ESLint)
+        run: npm run lint
+      - name: Controllo dei tipi (tsc)
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+  database:
+    name: Schema del database
+    needs: changes
+    if: needs.changes.outputs.database == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: safespend
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d safespend"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: safespend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Applica schema.sql
+        run: psql -v ON_ERROR_STOP=1 -f database/schema.sql
+      - name: Riapplica schema.sql (deve essere idempotente e non cancellare dati, come in db-init)
+        run: |
+          # db-init applica lo schema a ogni "docker compose up": se le tabelle vengono cancellate e ricreate,
+          # i loro identificativi interni (oid) cambiano e i dati degli utenti vanno persi.
+          q="SELECT string_agg(relname || ':' || oid, ',' ORDER BY relname) FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace"
+          before=$(psql -qAt -c "$q")
+          psql -v ON_ERROR_STOP=1 -f database/schema.sql
+          after=$(psql -qAt -c "$q")
+          if [ "$before" != "$after" ]; then
+            echo "::error file=database/schema.sql::Riapplicando lo schema le tabelle vengono cancellate e ricreate: a ogni avvio di docker compose i dati andrebbero persi. Usa CREATE TABLE IF NOT EXISTS invece di DROP TABLE."
+            exit 1
+          fi
+
+  docker:
+    name: Docker Compose (build e avvio)
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build delle immagini
+        run: docker compose build
+      - name: Avvio e attesa dei controlli di salute
+        run: docker compose up -d --wait --wait-timeout 180
+      - name: Verifica di /api/v1/health
+        run: curl --fail --silent --show-error http://localhost:8000/api/v1/health
+      - name: Log dei container in caso di errore
+        if: failure()
+        run: docker compose logs
+      - name: Arresto
+        if: always()
+        run: docker compose down -v
+
+  e2e:
+    name: Test End-to-End (Playwright)
+    needs: changes
+    # Parte sulle pull request; esegue i test solo quando la suite Playwright esiste (frontend/playwright.config.ts).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verifica la presenza della suite Playwright
+        id: suite
+        run: |
+          if [ -f frontend/playwright.config.ts ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Suite Playwright non ancora presente: test end-to-end saltati."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.suite.outputs.present == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Avvio dell'applicazione
+        if: steps.suite.outputs.present == 'true'
+        run: docker compose up -d --build --wait --wait-timeout 240
+      - name: Installa le dipendenze e i browser
+        if: steps.suite.outputs.present == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test Playwright
+        if: steps.suite.outputs.present == 'true'
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:3000
+        run: npx playwright test
+      - name: Report Playwright
+        if: failure() && steps.suite.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+      - name: Arresto
+        if: always() && steps.suite.outputs.present == 'true'
+        run: docker compose down -v
+
+  ci-ok:
+    name: ci-ok
+    needs: [changes, backend, frontend, database, docker, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Esito complessivo
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Esiti dei job: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "Almeno un job è fallito o è stato annullato."
+              exit 1
+            fi
+          done
+          echo "Tutti i job avviati sono andati a buon fine."

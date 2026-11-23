@@ -1,18 +1,11 @@
+-- SafeSpend database schema (source of truth; see the SDD data dictionary).
+-- Applied by the db-init job on every `docker compose up`, so it must be idempotent and must never
+-- delete data: use CREATE ... IF NOT EXISTS, never DROP. Changing an existing table needs an ALTER
+-- statement, or a reset of the local database (README, "Data persistence").
+
 BEGIN;
 
-DROP TABLE IF EXISTS alert CASCADE;
-DROP TABLE IF EXISTS planned_transaction CASCADE;
-DROP TABLE IF EXISTS transaction CASCADE;
-DROP TABLE IF EXISTS recurring_rule CASCADE;
-DROP TABLE IF EXISTS goal CASCADE;
-DROP TABLE IF EXISTS balance_snapshot CASCADE;
-DROP TABLE IF EXISTS category CASCADE;
-DROP TABLE IF EXISTS financial_profile CASCADE;
-DROP TABLE IF EXISTS _user CASCADE;
-DROP TABLE IF EXISTS achievement CASCADE;
-DROP TABLE IF EXISTS user_achievement CASCADE;
-
-CREATE TABLE _user (
+CREATE TABLE IF NOT EXISTS _user (
                        id_user BIGINT GENERATED ALWAYS AS IDENTITY,
                        name VARCHAR(100) NOT NULL,
                        surname VARCHAR(100) NOT NULL,
@@ -31,7 +24,7 @@ CREATE TABLE _user (
                        CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
 
-CREATE TABLE financial_profile (
+CREATE TABLE IF NOT EXISTS financial_profile (
                                    id_user BIGINT,
                                    safety_buffer NUMERIC(12,2) NOT NULL DEFAULT 0,
                                    horizon_days INTEGER NOT NULL DEFAULT 30,
@@ -48,7 +41,7 @@ CREATE TABLE financial_profile (
                                        )
 );
 
-CREATE TABLE category (
+CREATE TABLE IF NOT EXISTS category (
                           id_category BIGINT GENERATED ALWAYS AS IDENTITY,
                           id_user BIGINT,
                           name VARCHAR(100) NOT NULL,
@@ -63,7 +56,7 @@ CREATE TABLE category (
                           CONSTRAINT chk_category_system_user CHECK (is_default = (id_user IS NULL))
 );
 
-CREATE TABLE goal (
+CREATE TABLE IF NOT EXISTS goal (
                       id_goal BIGINT GENERATED ALWAYS AS IDENTITY,
                       id_user BIGINT NOT NULL,
                       name VARCHAR(100) NOT NULL,
@@ -83,7 +76,7 @@ CREATE TABLE goal (
                       CONSTRAINT chk_goal_status CHECK (status IN ('active', 'completed', 'suspended', 'expired'))
 );
 
-CREATE TABLE recurring_rule (
+CREATE TABLE IF NOT EXISTS recurring_rule (
                                 id_recurring_rule BIGINT GENERATED ALWAYS AS IDENTITY,
                                 id_user BIGINT NOT NULL,
                                 id_category BIGINT NOT NULL,
@@ -115,7 +108,7 @@ CREATE TABLE recurring_rule (
                                     )
 );
 
-CREATE TABLE planned_transaction (
+CREATE TABLE IF NOT EXISTS planned_transaction (
                                      id_planned_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
                                      id_user BIGINT NOT NULL,
                                      id_category BIGINT NOT NULL,
@@ -139,7 +132,7 @@ CREATE TABLE planned_transaction (
                                      CONSTRAINT chk_planned_pending_income CHECK (status <> 'pending_confirmation' OR type = 'income')
 );
 
-CREATE TABLE transaction (
+CREATE TABLE IF NOT EXISTS transaction (
                              id_transaction BIGINT GENERATED ALWAYS AS IDENTITY,
                              id_user BIGINT NOT NULL,
                              id_category BIGINT,
@@ -173,7 +166,7 @@ CREATE TABLE transaction (
                              CONSTRAINT uq_transaction_planned UNIQUE (id_planned_transaction)
 );
 
-CREATE TABLE balance_snapshot (
+CREATE TABLE IF NOT EXISTS balance_snapshot (
                                   id_snapshot BIGINT GENERATED ALWAYS AS IDENTITY,
                                   id_user BIGINT NOT NULL,
                                   id_adjustment_transaction BIGINT,
@@ -189,7 +182,7 @@ CREATE TABLE balance_snapshot (
                                   CONSTRAINT chk_snapshot_calc_balance CHECK (calculated_balance <> 'NaN'::numeric)
 );
 
-CREATE TABLE alert (
+CREATE TABLE IF NOT EXISTS alert (
                        id_alert BIGINT GENERATED ALWAYS AS IDENTITY,
                        id_user BIGINT NOT NULL,
                        type VARCHAR(25) NOT NULL,
@@ -207,7 +200,7 @@ CREATE TABLE alert (
                        CONSTRAINT chk_alert_resolution CHECK ((status = 'resolved') = (resolved_at IS NOT NULL))
 );
 
-CREATE TABLE achievement (
+CREATE TABLE IF NOT EXISTS achievement (
                              id_achievement BIGINT GENERATED ALWAYS AS IDENTITY,
                              name VARCHAR(100) NOT NULL,
                              description TEXT NOT NULL,
@@ -226,7 +219,7 @@ CREATE TABLE achievement (
                                  )
 );
 
-CREATE TABLE user_achievement (
+CREATE TABLE IF NOT EXISTS user_achievement (
                                   id_user BIGINT NOT NULL,
                                   id_achievement BIGINT NOT NULL,
                                   unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -236,12 +229,12 @@ CREATE TABLE user_achievement (
                                   CONSTRAINT fk_user_achievement_achievement FOREIGN KEY (id_achievement) REFERENCES achievement ON DELETE RESTRICT
 );
 
-CREATE INDEX idx_transaction_user_date ON "transaction" (id_user, transaction_date DESC);
-CREATE INDEX idx_recurring_user_status ON recurring_rule (id_user, status);
-CREATE INDEX idx_planned_user_date ON planned_transaction (id_user, planned_date, status);
-CREATE INDEX idx_alert_user_status ON alert (id_user, status);
-CREATE UNIQUE INDEX uq_alert_user_type_open ON alert (id_user, type)
+CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (id_user, transaction_date DESC);
+CREATE INDEX IF NOT EXISTS idx_recurring_user_status ON recurring_rule (id_user, status);
+CREATE INDEX IF NOT EXISTS idx_planned_user_date ON planned_transaction (id_user, planned_date, status);
+CREATE INDEX IF NOT EXISTS idx_alert_user_status ON alert (id_user, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_user_type_open ON alert (id_user, type)
     WHERE status IN ('active', 'read');
-CREATE INDEX idx_snapshot_user_date ON balance_snapshot (id_user, reconciliation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_snapshot_user_date ON balance_snapshot (id_user, reconciliation_date DESC);
 
 COMMIT;

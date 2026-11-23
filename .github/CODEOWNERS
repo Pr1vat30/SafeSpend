@@ -1,0 +1,9 @@
+# Revisori obbligatori (C13_CMP, §3.3.1 e §3.3.4).
+# Ogni file del repository appartiene ai Project Manager: con la regola "Require review from Code Owners"
+# attiva su main, ogni pull request verso main richiede l'approvazione di un PM, qualunque file tocchi.
+#
+# Project Manager: @alphi0m (Alfio Marra) e @Pr1vat30 (Salvatore Nocera); basta l'approvazione di uno dei due.
+# Una PR aperta da un PM va approvata dall'altro PM: GitHub non conta l'approvazione dell'autore.
+#
+
+*                                         @alphi0m @Pr1vat30

@@ -1,35 +1,113 @@
+name: safespend
+
+# Connection settings shared by the one-shot database jobs below
+x-pg-client-env: &pg-client-env
+  PGHOST: db
+  PGUSER: ${POSTGRES_USER:-postgres}
+  PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  PGDATABASE: ${POSTGRES_DB:-safespend}
+
 services:
   db:
     image: postgres:18
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-safespend}
     ports:
-      - "5432:5432"
+      # Host port defaults to 5433 so it doesn't clash with a local Homebrew PostgreSQL on 5432
+      - "${DB_PORT:-5433}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Applied automatically on first start (empty volume only)
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      # PostgreSQL 18+ expects the mount at /var/lib/postgresql (not .../data).
+      # The named volume keeps data when containers are stopped or removed.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
 
+  # One-shot job: applies database/schema.sql (idempotent) on every start, then exits.
+  db-init:
+    image: postgres:18
+    restart: "no"
+    environment: *pg-client-env
+    volumes:
+      - ./database/schema.sql:/schema.sql:ro
+    command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/schema.sql"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   backend:
     build: ./backend
+    restart: unless-stopped
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       # Inside the Compose network the database host is "db", not localhost
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-safespend}
+      CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}"]'
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at build time: the URL the *browser* uses to reach the API
+        NEXT_PUBLIC_API_URL: http://localhost:${BACKEND_PORT:-8000}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # --- On-demand tools (profile "tools"): never started by `docker compose up` ---
+
+  # docker compose run --rm db-backup
+  db-backup:
+    image: postgres:18
+    profiles: ["tools"]
+    environment: *pg-client-env
+    volumes:
+      - ./database/backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - f=safespend_$$(date +%Y%m%d_%H%M%S).sql && pg_dump --clean --if-exists -f /backups/$$f && echo "Backup saved to database/backups/$$f"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # docker compose run --rm -e BACKUP_FILE=<file>.sql db-restore
+  db-restore:
+    image: postgres:18
+    profiles: ["tools"]
+    environment: *pg-client-env
+    volumes:
+      - ./database/backups:/backups:ro
+    entrypoint:
+      - sh
+      - -c
+      - test -n "$$BACKUP_FILE" || { echo "Set BACKUP_FILE, e.g. -e BACKUP_FILE=safespend_20260101_120000.sql"; exit 1; }; psql -v ON_ERROR_STOP=1 -f "/backups/$$BACKUP_FILE" && echo "Restored $$BACKUP_FILE"
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+    # Fixed name: data survives `docker compose down` and is reloaded on the next `up`.
+    # Only `docker compose down -v` deletes it.
+    name: safespend_pgdata

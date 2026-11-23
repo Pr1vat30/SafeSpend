@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
     # Database (async SQLAlchemy URL, asyncpg driver)
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/safespend"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/safespend"
     DATABASE_ECHO: bool = False
 
 

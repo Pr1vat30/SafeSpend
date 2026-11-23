@@ -30,3 +30,6 @@ htmlcov/
 # Environment
 .env
 !.env.example
+
+# Database backups (may contain personal data)
+database/backups/
