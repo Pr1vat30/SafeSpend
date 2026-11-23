@@ -24,7 +24,7 @@ Configuration Management Plan (`docx/Planning & Monitoring/2_ConfigurationManage
 10. [Test end-to-end con Playwright](#10-test-end-to-end-con-playwright)
 11. [CODEOWNERS e revisioni obbligatorie](#11-codeowners-e-revisioni-obbligatorie)
 12. [Configurazione di GitHub (a cura dei PM)](#12-configurazione-di-github-a-cura-dei-pm)
-13. [Feature freeze, milestone e tag](#13-feature-freeze-milestone-e-tag)
+13. [Date chiave, milestone e tag](#13-date-chiave-milestone-e-tag)
 14. [Promemoria dei comandi](#14-promemoria-dei-comandi)
 15. [Domande frequenti](#15-domande-frequenti)
 
@@ -41,7 +41,8 @@ feature/al-…  ●──●──●───┘ (PR + CI + review) ●──�
 
 - `main` è il ramo ufficiale: contiene solo codice revisionato che ha superato la CI.
 - Nessuno scrive direttamente su `main`, nemmeno i PM: ogni modifica passa da una **pull request (PR)**.
-- Ogni Team Member lavora su un **branch** dedicato all'insieme di requisiti che gli è assegnato.
+- Ogni Team Member lavora su **branch brevi, uno per consegna**: ogni branch raccoglie una o più sub-issue
+  collegate della propria issue madre, vive da 1 a 3 giorni e si chiude con una sola PR.
 - Quando la PR è approvata e la CI è verde, un PM fa lo **squash merge**: tutti i commit del branch
   diventano un solo commit su `main`, e il branch viene cancellato.
 
@@ -118,24 +119,65 @@ Ogni requisito (o piccolo gruppo di requisiti) ha una **issue** su GitHub con:
 
 - titolo con l'ID del requisito, ad esempio `RF_PRE_2 – Simulazione di spesa (What-if)`;
 - etichetta del modulo (`simulation`, `cashflow`, …);
-- assegnatario e milestone (`M1` per il 27/11/2026, `M2` per il 09/12/2026).
+- assegnatario e milestone: c'è un'unica milestone, `Consegna (09/12)`, la consegna finale del 09/12/2026.
 
 Le issue e le schede di Trello seguono il piano finale del 23/11/2026 (task P0–P5 e di gestione, ID come `B-05`).
 
+### Issue madre per Team Member
+
+Le issue dei requisiti sono raggruppate in **una issue madre per Team Member** (etichetta `tracking`), che
+descrive il sottosistema, le date e le dipendenze con i colleghi. Le issue dei requisiti sono sue
+**sub-issue**: la madre mostra l'elenco e una barra di avanzamento che si aggiorna da sola quando le PR,
+con `Closes #<numero>`, chiudono le sub-issue. Si parte sempre dalla propria issue madre; la PR si collega
+alle sub-issue che chiude (una o più), non alla madre.
+
+| Issue madre | Team Member | Sub-issue |
+|---|---|---|
+| #26 | Antonio Lignelli – profile e simulation | #7, #8 |
+| #27 | Francesco Frascogna – transaction e riconciliazione | #9, #10, #11 |
+| #28 | Lucadomenico Chiappetta – ricorrenze, movimenti pianificati, scheduler e alert | #12, #13, #14, #15, #24 |
+| #29 | Luigi Talevi – cashflow e dashboard | #16, #17, #18 |
+| #30 | Antonio Vuolo – alternative, obiettivi, achievement e test end-to-end | #19, #20, #21, #25 |
+| #31 | Daniele Sorgente – assistant e calendario | #22, #23 |
+
+### Un branch per consegna, non per issue
+
+Le sub-issue sono piccole, quindi non serve un branch per ciascuna. Un branch corrisponde a una **consegna**:
+un gruppo di sub-issue collegate della stessa issue madre, che si revisionano bene insieme. Regole:
+
+- un branch = una PR, che può chiudere **più sub-issue** (`Closes #12, closes #13`);
+- il branch vive **da 1 a 3 giorni**: si apre da `main` aggiornato, si unisce, si cancella, e la consegna
+  successiva riparte da `main`;
+- ciò che serve ai colleghi va in una consegna **separata e anticipata** (autenticazione, Cash Flow Engine,
+  logica degli alert), anche con un'implementazione provvisoria dell'interfaccia;
+- niente branch personali lunghi fino al freeze: l'integrazione arriverebbe troppo tardi;
+- una PR non dovrebbe superare le ~400 righe modificate: se la consegna cresce troppo, va divisa.
+
+Consegne del backend (23–29/11):
+
+| Team Member | Branch (in ordine) | Sub-issue chiuse |
+|---|---|---|
+| Antonio Lignelli | `feature/al-profile` (entro il 26/11, serve a tutti), `feature/al-simulation` | #7; #8 |
+| Francesco Frascogna | `feature/ff-transaction` (transazioni e riconciliazione), `feature/ff-ocr` | #9, #10; #11 |
+| Lucadomenico Chiappetta | `feature/lc-recurring-planned`, `feature/lc-scheduler-alert`, dopo il freeze `feature/lc-seed` | #12, #13; #14, #15; #24 |
+| Luigi Talevi | `feature/lt-cashflow` (subito, anche con interfaccia provvisoria), `feature/lt-forecast-dashboard` | #16; #17, #18 |
+| Antonio Vuolo | `feature/av-goal-achievement`, `feature/av-alternatives` | #20, #21; #19 |
+| Daniele Sorgente | `feature/ds-assistant-calendar` | #22, #23 |
+
+Frontend (03–06/12): un branch per persona, `feature/<acronimo>-frontend`, che completa la parte frontend
+delle proprie sub-issue (Antonio Lignelli apre prima `feature/al-frontend-base`, da cui partono gli altri).
+I test end-to-end (#25) vanno in `feature/av-e2e`, con un commit per caso d'uso di ciascun Team Member.
+
 ### Nomi dei branch
 
-Formato: `tipo/<acronimo>-<modulo>-<requisiti>`, tutto in minuscolo, con trattini.
+Formato: `tipo/<acronimo>-<consegna>`, tutto in minuscolo, con trattini.
 
 | Tipo | Quando si usa | Esempio |
 |---|---|---|
-| `feature/` | nuovi requisiti di un modulo | `feature/al-simulation-rf-pre-2-4` |
+| `feature/` | una consegna di requisiti di un modulo | `feature/lc-recurring-planned` |
 | `fix/` | correzione di un difetto | `fix/ff-transaction-importo-negativo` |
 | `docs/` | documentazione nel repository | `docs/readme-installazione` |
 | `chore/` | file condivisi: schema, dipendenze comuni, Docker, CI | `chore/schema-idempotente` |
-
-**Un insieme grande va diviso.** Meglio tre PR da un requisito ciascuna che una PR enorme: si revisiona
-prima, si integra prima e i conflitti restano piccoli. Indicativamente, una PR non dovrebbe superare le
-400 righe modificate.
 
 ---
 
@@ -152,7 +194,7 @@ git pull
 ```
 
 ```bash
-git switch -c feature/al-simulation-rf-pre-2
+git switch -c feature/al-simulation
 ```
 
 ### Creare un modulo nuovo
@@ -290,7 +332,7 @@ riavvio; solo `docker compose down -v` li cancella.
 Appena hai il primo commit, pubblica il branch e apri una **draft pull request** verso `main`:
 
 ```bash
-git push -u origin feature/al-simulation-rf-pre-2
+git push -u origin feature/al-simulation
 ```
 
 Su GitHub: *Compare & pull request* → *Create draft pull request*. Una PR in bozza:
@@ -303,7 +345,8 @@ Su GitHub: *Compare & pull request* → *Create draft pull request*. Una PR in b
 
 Il testo della PR parte già dal [template](.github/pull_request_template.md). Compila:
 
-- la descrizione e `Closes #<numero issue>` (la issue si chiude da sola al merge);
+- la descrizione e `Closes #<numero>` per **ogni** sub-issue della consegna, ad esempio `Closes #12, closes #13`
+  (le issue si chiudono da sole al merge e la barra della issue madre si aggiorna); non collegare la issue madre;
 - i requisiti coperti;
 - le caselle dei controlli eseguiti e dei test;
 - uno screenshot se hai toccato l'interfaccia.
@@ -328,7 +371,7 @@ git switch main && git pull
 ```
 
 ```bash
-git branch -d feature/al-simulation-rf-pre-2
+git branch -d feature/al-simulation
 ```
 
 ### Come fare una buona revisione
@@ -519,15 +562,15 @@ servono un account con permessi di amministratore.
 
 ---
 
-## 13. Feature freeze, milestone e tag
+## 13. Date chiave, milestone e tag
 
 | Data | Evento | Cosa cambia |
 |---|---|---|
-| 27/11/2026 | Milestone 1: RAD v1.1, SDD v1.0 e backend core in `main` | i PM creano il tag `v0.1.0` sul commit di `main` |
+| 27/11/2026 | SDD v1.0 e backend core in `main` (autenticazione, transazioni, Cash Flow Engine) | scadenza intermedia, non è una milestone |
 | 29/11/2026 | Feature freeze del backend | sul backend sono accettate solo PR `fix/` e `docs/` |
 | 30/11/2026 | ODD v1.0 | l'ODD, scritto dal 26/11 in parallelo al backend, è approvato |
 | 07/12/2026 | Feature freeze del frontend | su tutto il repository sono accettate solo PR `fix/` e `docs/` |
-| 09/12/2026 | Milestone 2, consegna | i PM creano il tag `v1.0.0` |
+| 09/12/2026 | Milestone unica: consegna finale | i PM creano il tag `v1.0.0` |
 
 Creare un tag (PM, dalla radice del repository aggiornato):
 
@@ -549,7 +592,7 @@ git push origin v1.0.0
 
 | Cosa | Comando |
 |---|---|
-| Nuovo branch | `git switch main && git pull && git switch -c feature/<acr>-<modulo>-<rf>` |
+| Nuovo branch | `git switch main && git pull && git switch -c feature/<acr>-<consegna>` |
 | Stato | `git status` |
 | Commit | `git add <file> && git commit -m "feat(modulo): descrizione (RF_XX_N)"` |
 | Allinearsi a main | `git fetch origin && git merge origin/main` |

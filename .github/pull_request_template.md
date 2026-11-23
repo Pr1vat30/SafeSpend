@@ -2,7 +2,7 @@
 
 <!-- Cosa cambia questa pull request e perché, in poche righe. -->
 
-Closes #<!-- numero della issue -->
+Closes #<!-- numero della sub-issue; una riga per ogni sub-issue chiusa, ad esempio: Closes #12, closes #13. Non indicare la issue madre. -->
 
 ## Requisiti coperti
 
