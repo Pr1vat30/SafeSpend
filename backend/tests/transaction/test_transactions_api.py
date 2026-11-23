@@ -28,6 +28,13 @@ async def test_requires_a_user(db_client):
     assert response.json()["success"] is False
 
 
+async def test_unknown_user_is_rejected(db_client, default_ids):
+    category = default_ids[("Casa", "expense")]
+    response = await db_client.post(URL, json=payload(category), headers=headers(999999999))
+    assert response.status_code == 401
+    assert response.json()["success"] is False
+
+
 async def test_create_income(db_client, user_id, default_ids):
     body = payload(default_ids[("Stipendio", "income")], type="income", amount="1500.00")
     data = await create(db_client, user_id, body)

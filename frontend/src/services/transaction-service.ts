@@ -58,9 +58,12 @@ export const EMPTY_FILTERS: TransactionFilters = {
 };
 
 /**
- * TEMPORARY: until the authentication module is merged, the backend identifies the user through
- * the `X-User-Id` header. Set NEXT_PUBLIC_DEV_USER_ID to an existing user id (default: 1).
- * When authentication lands, replace this function and nothing else.
+ * TEMPORARY AUTHENTICATION (not a security mechanism). Until the Profile module is merged the
+ * backend identifies the user through the `X-User-Id` header: set NEXT_PUBLIC_DEV_USER_ID to the
+ * id of an existing user (default: 1). This is the only place in the frontend that knows about
+ * it: when the definitive authentication lands, replace this function and nothing else (changes
+ * to `src/lib/api-client.ts` go in a `chore/` PR). Backend counterpart:
+ * `backend/app/api/controller/transaction/dependencies.py`.
  */
 function authHeaders(): Record<string, string> {
   return { "X-User-Id": process.env.NEXT_PUBLIC_DEV_USER_ID ?? "1" };
