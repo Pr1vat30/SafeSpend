@@ -7,6 +7,11 @@ This repository holds the **backend API** (Python, FastAPI, PostgreSQL 18), the 
 (Next.js, React, TypeScript) and the project's documentation. Everything is
 **cross-platform** and runs on **Windows**, **macOS** and **Linux**.
 
+The project is developed by Team C13 (2 project managers, 6 team members). The only milestone
+is the **final delivery on 09/12/2026**. How the team works on GitHub (branches, pull requests,
+reviews, CI) is described in [CONTRIBUTING.md](CONTRIBUTING.md), in Italian, and summarised in
+[Contributing](#contributing) below.
+
 > [!NOTE]
 > Both apps are scaffolds for now. They contain the architecture, the tooling and empty
 > template files. The business features aren't built yet.
@@ -18,6 +23,11 @@ This repository holds the **backend API** (Python, FastAPI, PostgreSQL 18), the 
 ```
 SafeSpend/
 ├── .gitattributes           Enforces consistent LF line endings across Windows and Unix
+├── .github/
+│   ├── workflows/ci.yml     GitHub Actions CI (lint, tests, build, schema, Docker, e2e)
+│   ├── CODEOWNERS           Every file is owned by the project managers (review required)
+│   └── pull_request_template.md
+├── CONTRIBUTING.md          Team workflow: issues, branches, pull requests, CI (Italian)
 ├── .env.example             Docker Compose settings (ports, database credentials)
 ├── docker-compose.yml       PostgreSQL 18 + schema init + backend + frontend + backup tools
 ├── backend/                 FastAPI application
@@ -55,7 +65,9 @@ SafeSpend/
 │   ├── start.sh             macOS/Linux script to start PostgreSQL and apply schema
 │   ├── start.ps1            Windows PowerShell script to start PostgreSQL and apply schema
 │   └── backups/             Database dumps created by db-backup (git-ignored)
-├── docs/, docx/, meetings/  Project documentation (RAD, SDD, SOW, minutes, ...)
+├── document/                Project documents: product_docs/ (RAD, SDD, ...) and management/
+├── docx/                    Initiating and planning documents (SOW, PC, BC, PB, WBS, CMP, ...)
+├── meetings/                Meeting agendas and minutes
 └── README.md
 ```
 
@@ -367,8 +379,8 @@ FastAPI generates interactive API documentation:
 | Command | Purpose |
 | --- | --- |
 | `uv run pytest` | Run tests |
-| `uv run ruff check .` | Lint |
-| `uv run ruff format .` | Format |
+| `uv run ruff check .` | Lint (`--fix` corrects most issues) |
+| `uv run ruff format .` | Format (`--check` only verifies, as the CI does) |
 | `uv add <package>` / `uv add --dev <package>` | Add a dependency |
 
 **Frontend**, from `frontend/`:
@@ -380,3 +392,58 @@ FastAPI generates interactive API documentation:
 | `npm run lint` | ESLint (Next.js rules) |
 | `npm run typecheck` | TypeScript type check |
 | `npm install <package>` / `npm install -D <package>` | Add a dependency |
+
+Run the same checks as the CI before every push: `uv run ruff check . && uv run ruff format --check . && uv run pytest`
+in `backend/`, and `npm run lint && npm run typecheck && npm run build` in `frontend/`.
+
+---
+
+## Contributing
+
+The full guide, with commands and troubleshooting, is [CONTRIBUTING.md](CONTRIBUTING.md). In short:
+
+- **GitHub Flow.** `main` always works. Nobody pushes to `main` directly, not even the project
+  managers: every change goes through a pull request (PR).
+- **Issues.** Each requirement of the RAD is a sub-issue, grouped under one **parent issue per
+  team member** (label `tracking`, issues #26–#31). All issues belong to the single milestone
+  **Consegna (09/12)**.
+- **One branch per delivery, not per issue.** A branch groups related sub-issues of the same
+  parent issue, lives 1–3 days and ends with one PR that can close several sub-issues
+  (`Closes #12, closes #13`). Naming: `feature/<initials>-<delivery>` (also `fix/`, `docs/`,
+  `chore/`), for example `feature/lc-recurring-planned`.
+- **Merging.** Only **squash merge** is allowed: one PR becomes one commit on `main`. Branches are
+  **not** deleted automatically: the author deletes the branch after the merge
+  (*Delete branch* button in the PR).
+- **Key dates.** SDD v1.0 and backend core in `main` by 27/11 (internal deadline), backend
+  feature freeze 29/11, ODD v1.0 30/11, frontend feature freeze 07/12, delivery 09/12 with tag
+  `v1.0.0`. After each freeze only `fix/` and `docs/` PRs are accepted for that layer.
+
+### Branch protection
+
+`main` is protected by the ruleset **`protezione-main`** (Settings → Rules → Rulesets), with no
+bypass, not even for admins. A PR can be merged only when:
+
+| Rule | Effect |
+| --- | --- |
+| Pull request required | No direct pushes to `main`. |
+| 1 approval from a code owner | A project manager (`@alphi0m` or `@Pr1vat30`) must approve. A PR opened by a project manager is approved by the other one. |
+| Stale approvals dismissed, last push approved | A new commit after the approval needs a new review by someone other than its author. |
+| Conversations resolved | Every review comment must be marked as resolved. |
+| Status check `ci-ok` passing, branch up to date | The CI must be green on the latest `main` (use *Update branch* in the PR if needed). |
+| Squash merge only | Merge commits and rebase merging are disabled. |
+| No force pushes, no deletion | `main` can't be rewritten or deleted. |
+
+### Continuous integration
+
+The workflow `.github/workflows/ci.yml` runs on every PR to `main`, on every push to `main` and
+on demand. It starts only the jobs needed for the changed areas; the final job **`ci-ok`**
+summarises the result and is the only required check.
+
+| Job | Runs when these change | What it does |
+| --- | --- | --- |
+| `backend` | `backend/`, `database/` | PostgreSQL 18 service, schema, `uv sync --frozen`, `ruff check`, `ruff format --check`, `pytest` |
+| `frontend` | `frontend/` | Node 22, `npm ci`, lint, type check, build |
+| `database` | `database/schema.sql` | Applies the schema twice and fails if the second run recreates tables (data loss on `docker compose up`) |
+| `docker` | `docker-compose.yml`, Dockerfiles, `database/` | Builds and starts the stack, checks `/api/v1/health` |
+| `e2e` | every PR | Playwright tests, once `frontend/playwright.config.ts` exists (skipped until then) |
+| `ci-ok` | always | Fails if any started job failed or was cancelled |

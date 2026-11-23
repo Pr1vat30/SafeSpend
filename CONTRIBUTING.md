@@ -44,7 +44,8 @@ feature/al-…  ●──●──●───┘ (PR + CI + review) ●──�
 - Ogni Team Member lavora su **branch brevi, uno per consegna**: ogni branch raccoglie una o più sub-issue
   collegate della propria issue madre, vive da 1 a 3 giorni e si chiude con una sola PR.
 - Quando la PR è approvata e la CI è verde, un PM fa lo **squash merge**: tutti i commit del branch
-  diventano un solo commit su `main`, e il branch viene cancellato.
+  diventano un solo commit su `main`. Il branch **non** viene cancellato in automatico: lo cancella l'autore
+  quando non gli serve più (vedi [§7](#7-la-pull-request)).
 
 Perché funziona bene con la nostra struttura: il backend è organizzato per modulo in ogni strato
 (`api/controller/<modulo>`, `service/<modulo>`, `dao/<modulo>`, `models/<modulo>`, `api/dto/<modulo>`) e il
@@ -146,7 +147,7 @@ Le sub-issue sono piccole, quindi non serve un branch per ciascuna. Un branch co
 un gruppo di sub-issue collegate della stessa issue madre, che si revisionano bene insieme. Regole:
 
 - un branch = una PR, che può chiudere **più sub-issue** (`Closes #12, closes #13`);
-- il branch vive **da 1 a 3 giorni**: si apre da `main` aggiornato, si unisce, si cancella, e la consegna
+- il branch vive **da 1 a 3 giorni**: si apre da `main` aggiornato, si unisce e poi l'autore lo cancella; la consegna
   successiva riparte da `main`;
 - ciò che serve ai colleghi va in una consegna **separata e anticipata** (autenticazione, Cash Flow Engine,
   logica degli alert), anche con un'implementazione provvisoria dell'interfaccia;
@@ -362,7 +363,9 @@ Il testo della PR parte già dal [template](.github/pull_request_template.md). C
 4. Tutte le discussioni devono essere risolte (*Resolve conversation*).
 5. Il branch deve essere aggiornato rispetto a `main`: se GitHub mostra *This branch is out-of-date*, usa
    *Update branch* o fai `git merge origin/main` in locale.
-6. Un PM clicca **Squash and merge**. Il branch viene cancellato automaticamente.
+6. Un PM clicca **Squash and merge**. Il branch **non** si cancella da solo: dopo il merge l'autore lo
+   cancella dal pulsante *Delete branch* nella PR (o con `git push origin --delete <branch>`), a meno che
+   non gli serva ancora per una correzione.
 
 Dopo il merge, in locale:
 
@@ -528,7 +531,8 @@ avere almeno il permesso *Write* sul repository, altrimenti GitHub ignora la reg
 ## 12. Configurazione di GitHub (a cura dei PM)
 
 Queste impostazioni non stanno nei file del repository: si attivano una volta dalla pagina di GitHub e
-servono un account con permessi di amministratore.
+servono un account con permessi di amministratore. **Sono già attive dal 23/11/2026** (la repository è
+pubblica, quindi i ruleset sono disponibili anche con il piano gratuito); la sezione serve come riferimento.
 
 ### Impostazioni generali
 
@@ -536,7 +540,8 @@ servono un account con permessi di amministratore.
 
 - attiva **Allow squash merging**; disattiva *Allow merge commits* e *Allow rebase merging*;
 - attiva **Always suggest updating pull request branches**;
-- attiva **Automatically delete head branches**.
+- lascia **spenta** *Automatically delete head branches*: i branch uniti restano su GitHub finché l'autore non li
+  cancella, così si possono ancora consultare o riusare per una correzione subito dopo il merge.
 
 ### Protezione di `main`
 
