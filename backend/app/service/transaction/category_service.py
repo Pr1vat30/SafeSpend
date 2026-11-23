@@ -32,8 +32,10 @@ class CategoryService:
         Returns the number of reassigned transactions.
         """
         category = await self._get_custom(user_id, category_id)
-        if await self.dao.count_other_references(category_id):
-            raise ConflictError(messages.CATEGORY_IN_USE)
+        rules, planned = await self.dao.count_references(category_id)
+        if rules or planned:
+            # Data of other modules is never altered: the category simply stays in place.
+            raise ConflictError(messages.category_in_use(category.name, rules, planned))
 
         fallbacks = {}
         for transaction_type in TRANSACTION_TYPES:

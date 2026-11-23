@@ -66,9 +66,10 @@ export function CategoryManager({ categories, onChanged }: CategoryManagerProps)
   }
 
   function handleDelete(category: Category) {
+    // Close the dialog first: if the backend refuses (category still in use), the error shows.
+    setDeleting(null);
     void run(async () => {
       const result = await transactionService.removeCategory(category.id_category);
-      setDeleting(null);
       setNotice(
         `Categoria eliminata. Transazioni riassegnate a «Altro»: ${result.reassigned_transactions}.`,
       );

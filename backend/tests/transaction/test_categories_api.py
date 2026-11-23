@@ -181,3 +181,36 @@ async def test_category_used_by_a_recurring_rule_cannot_be_deleted(
     )
     response = await db_client.delete(f"{CATEGORIES}/{category_id}", headers=headers(user_id))
     assert response.status_code == 409
+    error = response.json()["error"]
+    assert "Abbonamenti" in error
+    assert "1 regola ricorrente" in error
+
+    # The category and the other module's data are left untouched.
+    listing = await db_client.get(CATEGORIES, headers=headers(user_id))
+    assert "Abbonamenti" in [c["name"] for c in listing.json()["data"]]
+    still_used = await db_session.scalar(
+        text("SELECT count(*) FROM recurring_rule WHERE id_category = :c"), {"c": category_id}
+    )
+    assert still_used == 1
+
+
+async def test_category_used_by_planned_transactions_explains_why(
+    db_client, db_session, user_id
+):
+    created = (await create_category(db_client, user_id, "Visite")).json()["data"]
+    category_id = created["id_category"]
+    for name in ("Dentista", "Oculista"):
+        await db_session.execute(
+            text(
+                "INSERT INTO planned_transaction (id_user, id_category, name, type, amount,"
+                " planned_date) VALUES (:u, :c, :n, 'expense', 50, CURRENT_DATE)"
+            ),
+            {"u": user_id, "c": category_id, "n": name},
+        )
+    response = await db_client.delete(f"{CATEGORIES}/{category_id}", headers=headers(user_id))
+    assert response.status_code == 409
+    assert "2 transazioni pianificate" in response.json()["error"]
+    remaining = await db_session.scalar(
+        text("SELECT count(*) FROM planned_transaction WHERE id_category = :c"), {"c": category_id}
+    )
+    assert remaining == 2

@@ -73,13 +73,14 @@ class CategoryDAO:
         result = await self.db.execute(stmt)
         return result.rowcount
 
-    async def count_other_references(self, category_id: int) -> int:
-        """Recurring rules and planned transactions that still use the category."""
+    async def count_references(self, category_id: int) -> tuple[int, int]:
+        """Recurring rules and planned transactions (rules, planned) that still use the category."""
         row = await self.db.execute(
             text(
-                "SELECT (SELECT count(*) FROM recurring_rule WHERE id_category = :id)"
-                " + (SELECT count(*) FROM planned_transaction WHERE id_category = :id)"
+                "SELECT (SELECT count(*) FROM recurring_rule WHERE id_category = :id),"
+                " (SELECT count(*) FROM planned_transaction WHERE id_category = :id)"
             ),
             {"id": category_id},
         )
-        return int(row.scalar_one())
+        rules, planned = row.one()
+        return int(rules), int(planned)
