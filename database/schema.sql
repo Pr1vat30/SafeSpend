@@ -237,4 +237,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_user_type_open ON alert (id_user, typ
     WHERE status IN ('active', 'read');
 CREATE INDEX IF NOT EXISTS idx_snapshot_user_date ON balance_snapshot (id_user, reconciliation_date DESC);
 
+-- Default categories (B-06, RF_TRA): shared by every user (id_user IS NULL, is_default = TRUE).
+-- Idempotent: a row is inserted only when it does not exist yet, so re-applying never duplicates it.
+INSERT INTO category (id_user, name, type, is_default)
+SELECT NULL, v.name, v.type, TRUE
+FROM (VALUES
+          ('Alimentari', 'expense'),
+          ('Casa', 'expense'),
+          ('Trasporti', 'expense'),
+          ('Salute', 'expense'),
+          ('Abbigliamento', 'expense'),
+          ('Svago', 'expense'),
+          ('Altro', 'expense'),
+          ('Stipendio', 'income'),
+          ('Altro', 'income')
+     ) AS v(name, type)
+WHERE NOT EXISTS (
+    SELECT 1 FROM category c WHERE c.id_user IS NULL AND c.name = v.name AND c.type = v.type
+);
+
 COMMIT;
