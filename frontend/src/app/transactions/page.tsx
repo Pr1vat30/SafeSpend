@@ -79,6 +79,7 @@ export default function TransactionsPage() {
         await transactionService.create(input);
       }
       setFormTarget(null);
+      // CASH FLOW: refresh balance / STS / projections here when the Cash Flow screens exist.
       setVersion((v) => v + 1);
     } catch (e) {
       setFormError(errorMessage(e));
@@ -93,6 +94,7 @@ export default function TransactionsPage() {
     try {
       await transactionService.remove(toDelete.id_transaction);
       setToDelete(null);
+      // CASH FLOW: refresh balance / STS / projections here when the Cash Flow screens exist.
       setVersion((v) => v + 1);
     } catch (e) {
       setError(errorMessage(e));

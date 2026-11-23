@@ -1,7 +1,23 @@
 """Transaction business logic: validation against categories, filters and totals.
 
-Balance, Safe-to-Spend and projections are derived from the `transaction` table by the Cash Flow
-Engine, so they stay correct after every insert, update or delete without being duplicated here.
+INTEGRATION WITH THE CASH FLOW ENGINE (not in `main` yet; nothing is implemented or stubbed here)
+Balance, Safe-to-Spend (STS) and projections are not computed by this module. The `transaction`
+table is their input, and these are the only points where manual income/expense rows change:
+
+- `create_transaction`, `update_transaction`, `delete_transaction` (this class);
+- the request is committed once by `get_db` after the service returns, so any code that reads
+  the table in a later request already sees the new data.
+
+Today there is nothing to call. When the Cash Flow Engine is merged, one of two things applies:
+1. it reads the table on demand: no change is needed in this module;
+2. it keeps stored or cached results (balance, STS, alerts): call it from the three methods above,
+   after the DAO call and inside the same request, passing `user_id` and the affected dates
+   (the old and the new date on update). Inject it through the constructor, like the DAOs.
+
+Category deletion (`CategoryService.delete_category`) only changes `id_category`: amounts, types
+and dates stay the same, so it does not affect balance, STS or projections.
+On the frontend, `app/transactions/page.tsx` reloads its list after every change; a screen that
+shows STS or projections must be refreshed at the same points (marked with `CASH FLOW`).
 """
 
 from datetime import date
