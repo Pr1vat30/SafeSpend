@@ -14,9 +14,7 @@ $RECYCLE.BIN/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-.idea/workspace.xml
-.idea/shelf/
-.idea/httpRequests/
+.idea/
 
 # Python
 __pycache__/
