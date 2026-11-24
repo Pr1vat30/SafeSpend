@@ -3,7 +3,8 @@
 from fastapi import APIRouter
 
 from app.api.controller.health.health_controller import router as health_router
+from app.api.controller.goals_controller import router as goals_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
-# api_router.include_router(<module>_router)
+api_router.include_router(goals_router)
