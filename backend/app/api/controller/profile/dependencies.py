@@ -54,3 +54,15 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_bearer_token(
+    _: CurrentUser,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> str:
+    """The raw token of an authenticated request (used by logout to revoke it)."""
+    assert credentials is not None  # guaranteed by CurrentUser
+    return credentials.credentials
+
+
+BearerToken = Annotated[str, Depends(get_bearer_token)]

@@ -69,22 +69,22 @@ class AuthService:
         user.failed_login_attempts = 0
         user.locked_until = None
         await self.users.update(user)
-        token, expires_in = security.create_access_token(user.id_user, user.token_version)
+        token, expires_in = security.create_access_token(user.id_user)
         return TokenResponse(access_token=token, expires_in=expires_in)
 
-    async def logout(self, user: User) -> None:
-        """RF_AUT_3: increments token_version, so every token issued before is rejected."""
-        user.token_version += 1
-        await self.users.update(user)
+    async def logout(self, token: str) -> None:
+        """RF_AUT_3: the session token is revoked; a new login is required."""
+        claims = security.decode_access_token(token)
+        if claims is not None:
+            security.revoked_tokens.revoke(claims.jti, claims.expires_at)
 
     async def authenticate(self, token: str | None) -> User:
         """Returns the user of a valid, non-revoked token (used by every protected route)."""
-        decoded = security.decode_access_token(token) if token else None
-        if decoded is None:
+        claims = security.decode_access_token(token) if token else None
+        if claims is None:
             raise UnauthorizedError(msg.NOT_AUTHENTICATED)
-        id_user, token_version = decoded
-        user = await self.users.get_by_id(id_user)
-        if user is None or user.token_version != token_version:
+        user = await self.users.get_by_id(claims.id_user)
+        if user is None:  # account deleted (RF_AUT_4)
             raise UnauthorizedError(msg.NOT_AUTHENTICATED)
         return user
 

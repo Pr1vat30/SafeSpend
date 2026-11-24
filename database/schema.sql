@@ -24,10 +24,6 @@ CREATE TABLE IF NOT EXISTS _user (
                        CONSTRAINT chk_user_failed_attempts CHECK (failed_login_attempts >= 0)
 );
 
--- RF_AUT_3: logout revokes the user's tokens. Every JWT carries the token_version it was issued
--- with; logout increments it, so older tokens are rejected. ALTER keeps the script idempotent.
-ALTER TABLE _user ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
-
 CREATE TABLE IF NOT EXISTS financial_profile (
                                    id_user BIGINT,
                                    safety_buffer NUMERIC(12,2) NOT NULL DEFAULT 0,

@@ -99,3 +99,11 @@ async def test_protected_routes_need_a_valid_token(api):
     bad = await api.get(PROFILE, headers={"Authorization": "Bearer non-un-token"})
     assert bad.status_code == 401
     assert bad.json()["success"] is False
+
+
+async def test_after_logout_a_new_login_works(api, user):
+    await api.post(LOGOUT, headers=user["headers"])
+
+    login = await api.post(LOGIN, json={"email": user["email"], "password": PASSWORD})
+    token = login.json()["data"]["access_token"]
+    assert (await api.get(ME, headers={"Authorization": f"Bearer {token}"})).status_code == 200

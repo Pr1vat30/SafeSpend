@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, status
 
-from app.api.controller.profile.dependencies import AuthServiceDep, CurrentUser
+from app.api.controller.profile.dependencies import AuthServiceDep, BearerToken, CurrentUser
 from app.api.dto.common.response import APIResponse
 from app.api.dto.profile.schema import LoginRequest, RegisterRequest, TokenResponse, UserRead
 from app.service.profile import messages as msg
@@ -24,9 +24,9 @@ async def login(body: LoginRequest, auth: AuthServiceDep):
 
 
 @router.post("/logout", response_model=APIResponse[None])
-async def logout(user: CurrentUser, auth: AuthServiceDep):
-    """RF_AUT_3: revokes every token of the user; a new login is required."""
-    await auth.logout(user)
+async def logout(token: BearerToken, auth: AuthServiceDep):
+    """RF_AUT_3: revokes the session token; a new login is required."""
+    await auth.logout(token)
     return APIResponse.ok(message=msg.LOGGED_OUT)
 
 
