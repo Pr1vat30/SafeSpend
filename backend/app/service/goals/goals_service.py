@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 
-from app.api.dto.goals_dto import (
+from app.api.dto.goals.goals_dto import (
     GoalContributionDTO,
     GoalCreateDTO,
     GoalExtendDeadlineDTO,
