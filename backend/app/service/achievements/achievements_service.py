@@ -1,7 +1,7 @@
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from datetime import date, datetime, timedelta
-from app.api.dto.achievements_dto import AchievementStatusDTO
+from app.api.dto.achievements.achievements_dto import AchievementStatusDTO
 
 # -- DA AGGIUNGERE QUANDO I DAO SARANNO REALIZZATI --
 #from app.dao.achievement_dao import AchievementDAO

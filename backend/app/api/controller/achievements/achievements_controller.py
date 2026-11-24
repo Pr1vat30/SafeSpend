@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, status
 
-from app.api.dto.achievements_dto import (
+from app.api.dto.achievements.achievements_dto import (
     AchievementListResponseDTO,
     AchievementStatusDTO,
 )
