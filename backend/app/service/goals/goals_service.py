@@ -16,11 +16,14 @@ from app.api.dto.goals.goals_dto import (
 
 # from app.models.goals import Goal -- DA DEFINIRE INSIEME AI DAO
 
+
 # -- STUB TEMPORANEO DA RIMUOVERE QUANDO SI IMPORTA IL MODELLO ORM --
 class Goal:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
 # ------------------------------------------------------------------
 
 # -- DA DECOMMENTARE QUANDO I MODULI SARANNO DISPONIBILI --
@@ -68,7 +71,11 @@ class GoalService:
 
         # -- DA SINCRONIZZARE CON RECURRING RULE --
         recurring_rule_id = None
-        if payload.create_recurring_rule and payload.monthly_contribution > Decimal("0.00") and self.recurring_rule_dao:
+        if (
+            payload.create_recurring_rule
+            and payload.monthly_contribution > Decimal("0.00")
+            and self.recurring_rule_dao
+        ):
             # Crea regola ricorrente mensile collegata all'accantonamento
             rule = await self.recurring_rule_dao.create_goal_saving_rule(
                 user_id=user_id,

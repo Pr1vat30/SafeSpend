@@ -1,5 +1,6 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+
 from fastapi import APIRouter, Depends, status
 
 from app.api.dto.goals.goals_dto import (
@@ -53,7 +54,7 @@ class MockGoalService:
             is_overdue=False,
             buffer_warning=None,
             id_recurring_rule=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         return GoalListResponseDTO(
             goals=[sample],
@@ -81,7 +82,7 @@ class MockGoalService:
             is_overdue=False,
             buffer_warning=None,
             id_recurring_rule=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
     @staticmethod
@@ -153,6 +154,8 @@ class MockGoalService:
 
 def get_goal_service() -> MockGoalService:
     return MockGoalService()
+
+
 # ------------------------------------------------
 
 
@@ -171,7 +174,7 @@ router = APIRouter(
 async def get_user_goals(
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> GoalListResponseDTO:
     return await goal_service.list_goals(user_id)
 
@@ -186,7 +189,7 @@ async def create_goal(
     payload: GoalCreateDTO,
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> GoalResponseDTO:
     return await goal_service.create_goal(user_id, payload)
 
@@ -202,7 +205,7 @@ async def update_goal(
     payload: GoalUpdateDTO,
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> GoalResponseDTO:
     return await goal_service.update_goal(user_id, goal_id, payload)
 
@@ -218,7 +221,7 @@ async def contribute_to_goal(
     payload: GoalContributionDTO,
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> GoalResponseDTO:
     return await goal_service.add_contribution(user_id, goal_id, payload)
 
@@ -234,7 +237,7 @@ async def extend_goal_deadline(
     payload: GoalExtendDeadlineDTO,
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> GoalResponseDTO:
     return await goal_service.extend_deadline(user_id, goal_id, payload)
 
@@ -248,6 +251,6 @@ async def delete_goal(
     goal_id: int,
     user_id: int = Depends(get_current_user_id),
     goal_service: MockGoalService = Depends(get_goal_service),
-    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE REALE
+    # goal_service: GoalService = Depends(get_goal_service), DA DECOMMENTARE PER IMPLEMENTAZIONE
 ) -> None:
     await goal_service.delete_goal(user_id, goal_id)

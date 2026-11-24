@@ -1,23 +1,25 @@
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
-from datetime import date, datetime, timedelta
+
 from app.api.dto.achievements.achievements_dto import AchievementStatusDTO
 
 # -- DA AGGIUNGERE QUANDO I DAO SARANNO REALIZZATI --
-#from app.dao.achievement_dao import AchievementDAO
-#from app.dao.profile_dao import ProfileDAO
-#from app.dao.snapshot_dao import BalanceSnapshotDAO
-#from app.service.cashflow_engine import CashFlowEngine
+# from app.dao.achievement_dao import AchievementDAO
+# from app.dao.profile_dao import ProfileDAO
+# from app.dao.snapshot_dao import BalanceSnapshotDAO
+# from app.service.cashflow_engine import CashFlowEngine
 # ---------------------------------------------------
 
 ROME_TZ = ZoneInfo("Europe/Rome")
+
 
 class AchievementService:
     """
     SS4 - Gestione Achievements (RF_PRE_6).
     Gestisce:
-    1. Consultazione catalogo + avanzamento per la UI (get_user_achievements).
-    2. Verifica deterministica giornaliera delle regole fisse per lo Scheduler (check_and_unlock_for_user):
+    1. Consultazione catalogo + avanzamento per la UI.
+    2. Verifica deterministica giornaliera delle regole fisse per lo Scheduler:
        - 'Buffer intatto': saldo reale mai sotto il Safety Buffer negli ultimi 30 giorni.
        - 'Saldo allineato': almeno una riconciliazione a settimana per 4 settimane consecutive.
     """
@@ -67,7 +69,7 @@ class AchievementService:
         return results
 
     async def check_and_unlock_for_user(
-            self, user_id: int, reference_date: date | None = None
+        self, user_id: int, reference_date: date | None = None
     ) -> list[int]:
         """
         Invocato dallo Scheduler giornaliero (RF_PRE_6, RNF_AF_6).
@@ -100,7 +102,7 @@ class AchievementService:
         return newly_unlocked
 
     async def _compute_current_progress(
-            self, user_id: int, rule_type: str | None, target: int, today: date
+        self, user_id: int, rule_type: str | None, target: int, today: date
     ) -> int:
         if rule_type == "buffer_intact_30d":
             return await self._count_consecutive_days_above_buffer(user_id, today, max_days=target)
@@ -110,7 +112,7 @@ class AchievementService:
 
     # -- DA SINCRONIZZARE METODI DAO --
     async def _count_consecutive_days_above_buffer(
-            self, user_id: int, today: date, max_days: int = 30
+        self, user_id: int, today: date, max_days: int = 30
     ) -> int:
         """
         Regola 1 (RF_PRE_6): 'Buffer intatto'
@@ -123,7 +125,9 @@ class AchievementService:
 
         start_date = today - timedelta(days=max_days - 1)
 
-        daily_history: dict[date, Decimal] = await self.cashflow_engine.get_historical_daily_balances(
+        daily_history: dict[
+            date, Decimal
+        ] = await self.cashflow_engine.get_historical_daily_balances(
             user_id=user_id, start_date=start_date, end_date=today
         )
 
@@ -139,7 +143,7 @@ class AchievementService:
 
     # -- DA SINCRONIZZARE METODI DAO --
     async def _count_consecutive_reconciled_weeks(
-            self, user_id: int, today: date, max_weeks: int = 4
+        self, user_id: int, today: date, max_weeks: int = 4
     ) -> int:
         """
         Regola 2 (RF_PRE_6): 'Saldo allineato'
