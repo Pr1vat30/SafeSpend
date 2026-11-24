@@ -8,16 +8,21 @@ from pydantic import BaseModel
 
 
 class CalendarEntry(BaseModel):
-    """One occurrence of a recurring rule on a day of the calendar."""
+    """One income or expense on a day of the calendar.
 
-    id_recurring_rule: int
+    `source_id` is the id of the recurring rule (`source="recurring"`) or of the planned movement
+    (`source="planned"`). `frequency` is set only for recurring rules.
+    """
+
+    source: Literal["recurring", "planned"]
+    source_id: int
     name: str
     type: Literal["income", "expense"]
     amount: Decimal
-    frequency: Literal["weekly", "monthly", "yearly"]
-    is_installment: bool
     id_category: int
     category_name: str | None = None
+    frequency: Literal["weekly", "monthly", "yearly"] | None = None
+    is_installment: bool = False
 
 
 class CalendarDay(BaseModel):

@@ -1,7 +1,8 @@
 """Income/expense calendar (RF_CG_1).
 
-Occurrences are computed on request from the active recurring rules (automatic projection on the
-future calendar), so nothing is written to the database.
+The calendar shows the recurring rules and the planned movements of a month. Occurrences of the
+recurring rules are computed on request (automatic projection on the future calendar), so nothing
+is written to the database.
 """
 
 from calendar import monthrange
@@ -10,9 +11,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from app.api.dto.calendar.schema import CalendarDay, CalendarEntry, CalendarMonth
-from app.dao.calendar.calendar_dao import CalendarDAO, CalendarRule
+from app.dao.calendar.calendar_dao import CalendarDAO, CalendarPlanned, CalendarRule
 
 ZERO = Decimal("0.00")
+FREQUENCIES = ("weekly", "monthly", "yearly")
 
 
 def _clamped(year: int, month: int, day: int) -> date:
@@ -28,14 +30,17 @@ def expand_occurrences(
     Monthly and yearly rules keep the day of `first`: when a month is shorter they fall on its
     last day, and go back to the original day in the following months.
     """
+    if frequency not in FREQUENCIES:
+        raise ValueError(f"Unknown frequency: {frequency}")
+
     lower = max(start, first)
     upper = stop if end is None else min(stop, end)
     if lower > upper:
         return []
 
     if frequency == "weekly":
-        offset = -(lower - first).days % 7
-        current = lower + timedelta(days=offset)
+        # First date from `lower` on that is a whole number of weeks after `first`.
+        current = lower + timedelta(days=(-(lower - first).days) % 7)
         dates = []
         while current <= upper:
             dates.append(current)
@@ -48,32 +53,48 @@ def expand_occurrences(
         while (year, month) <= (upper.year, upper.month):
             candidates.append(_clamped(year, month, first.day))
             year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    elif frequency == "yearly":
+    else:  # yearly
         candidates = [
             _clamped(year, first.month, first.day) for year in range(lower.year, upper.year + 1)
         ]
-    else:
-        raise ValueError(f"Unknown frequency: {frequency}")
 
     return [day for day in candidates if lower <= day <= upper]
 
 
-def _totals(entries: list[CalendarEntry]) -> tuple[Decimal, Decimal]:
-    income = sum((e.amount for e in entries if e.type == "income"), ZERO)
-    expense = sum((e.amount for e in entries if e.type == "expense"), ZERO)
-    return income, expense
-
-
-def _entry(rule: CalendarRule) -> CalendarEntry:
+def _rule_entry(rule: CalendarRule) -> CalendarEntry:
     return CalendarEntry(
-        id_recurring_rule=rule.id_recurring_rule,
+        source="recurring",
+        source_id=rule.id_recurring_rule,
         name=rule.name,
         type=rule.type,
         amount=rule.amount,
-        frequency=rule.frequency,
-        is_installment=rule.is_installment,
         id_category=rule.id_category,
         category_name=rule.category_name,
+        frequency=rule.frequency,
+        is_installment=rule.is_installment,
+    )
+
+
+def _planned_entry(planned: CalendarPlanned) -> CalendarEntry:
+    return CalendarEntry(
+        source="planned",
+        source_id=planned.id_planned_transaction,
+        name=planned.name,
+        type=planned.type,
+        amount=planned.amount,
+        id_category=planned.id_category,
+        category_name=planned.category_name,
+    )
+
+
+def _day(day: date, entries: list[CalendarEntry]) -> CalendarDay:
+    """Entries of a day in a stable order (incomes first, then by name), with the day totals."""
+    entries = sorted(entries, key=lambda e: (e.type != "income", e.name, e.source, e.source_id))
+    return CalendarDay(
+        date=day,
+        total_income=sum((e.amount for e in entries if e.type == "income"), ZERO),
+        total_expense=sum((e.amount for e in entries if e.type == "expense"), ZERO),
+        entries=entries,
     )
 
 
@@ -82,32 +103,24 @@ class CalendarService:
         self.dao = dao
 
     async def get_month(self, user_id: int, year: int, month: int) -> CalendarMonth:
-        """Recurring incomes and expenses of the user in the given month, grouped by day."""
+        """Recurring and planned incomes and expenses of the user in a month, grouped by day."""
         start = date(year, month, 1)
         stop = date(year, month, monthrange(year, month)[1])
-        rules = await self.dao.find_active_rules(user_id, start, stop)
 
         by_day: dict[date, list[CalendarEntry]] = defaultdict(list)
-        for rule in rules:
-            dates = expand_occurrences(
+        for rule in await self.dao.find_active_rules(user_id, start, stop):
+            occurrences = expand_occurrences(
                 rule.first_occurrence_date, rule.frequency, start, stop, rule.end_date
             )
-            for day in dates:
-                by_day[day].append(_entry(rule))
+            for day in occurrences:
+                by_day[day].append(_rule_entry(rule))
+        for planned in await self.dao.find_planned(user_id, start, stop):
+            by_day[planned.planned_date].append(_planned_entry(planned))
 
-        days = []
-        for day in sorted(by_day):
-            entries = sorted(by_day[day], key=lambda e: (e.type, e.name, e.id_recurring_rule))
-            income, expense = _totals(entries)
-            days.append(
-                CalendarDay(date=day, total_income=income, total_expense=expense, entries=entries)
-            )
-
-        all_entries = [entry for d in days for entry in d.entries]
-        income, expense = _totals(all_entries)
+        days = [_day(day, by_day[day]) for day in sorted(by_day)]
         return CalendarMonth(
             month=f"{year:04d}-{month:02d}",
-            total_income=income,
-            total_expense=expense,
+            total_income=sum((d.total_income for d in days), ZERO),
+            total_expense=sum((d.total_expense for d in days), ZERO),
             days=days,
         )

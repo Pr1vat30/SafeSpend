@@ -40,6 +40,6 @@ async def get_calendar(
     user_id: CurrentUserId,
     month: Annotated[str, Query(pattern=MONTH_PATTERN, description="Month as YYYY-MM")],
 ):
-    """Recurring incomes and expenses of the month, grouped by day."""
+    """Recurring and planned incomes and expenses of the month, grouped by day."""
     year, month_number = (int(part) for part in month.split("-"))
     return APIResponse.ok(await service.get_month(user_id, year, month_number))

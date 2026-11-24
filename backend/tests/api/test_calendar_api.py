@@ -1,33 +1,18 @@
 """API tests of the income/expense calendar (RF_CG_1). The DAO is replaced by a fake one."""
 
-from datetime import date
-from decimal import Decimal
-
 import pytest
 
 from app.api.controller.calendar.calendar_controller import get_calendar_service
-from app.dao.calendar.calendar_dao import CalendarRule
 from app.main import app
 from app.service.calendar.calendar_service import CalendarService
-from tests.service.test_calendar_service import FakeCalendarDAO
-
-GYM = CalendarRule(
-    id_recurring_rule=7,
-    name="Palestra",
-    type="expense",
-    amount=Decimal("50.00"),
-    frequency="monthly",
-    first_occurrence_date=date(2026, 11, 10),
-    end_date=None,
-    is_installment=False,
-    id_category=3,
-    category_name="Salute e Fitness",
-)
+from tests.calendar_fakes import FakeCalendarDAO, planned, rule
 
 
 @pytest.fixture
 def fake_dao():
-    dao = FakeCalendarDAO([GYM])
+    dao = FakeCalendarDAO(
+        rules=[rule(id_recurring_rule=7)], planned=[planned(id_planned_transaction=4)]
+    )
     app.dependency_overrides[get_calendar_service] = lambda: CalendarService(dao)
     return dao
 
@@ -41,7 +26,7 @@ async def test_get_calendar_returns_the_month(client, fake_dao):
     assert body["data"] == {
         "month": "2026-12",
         "total_income": "0.00",
-        "total_expense": "50.00",
+        "total_expense": "200.00",
         "days": [
             {
                 "date": "2026-12-10",
@@ -49,17 +34,36 @@ async def test_get_calendar_returns_the_month(client, fake_dao):
                 "total_expense": "50.00",
                 "entries": [
                     {
-                        "id_recurring_rule": 7,
+                        "source": "recurring",
+                        "source_id": 7,
                         "name": "Palestra",
                         "type": "expense",
                         "amount": "50.00",
-                        "frequency": "monthly",
-                        "is_installment": False,
                         "id_category": 3,
                         "category_name": "Salute e Fitness",
+                        "frequency": "monthly",
+                        "is_installment": False,
                     }
                 ],
-            }
+            },
+            {
+                "date": "2026-12-20",
+                "total_income": "0.00",
+                "total_expense": "150.00",
+                "entries": [
+                    {
+                        "source": "planned",
+                        "source_id": 4,
+                        "name": "Dentista",
+                        "type": "expense",
+                        "amount": "150.00",
+                        "id_category": 3,
+                        "category_name": "Salute e Fitness",
+                        "frequency": None,
+                        "is_installment": False,
+                    }
+                ],
+            },
         ],
     }
 
@@ -77,3 +81,4 @@ async def test_get_calendar_requires_the_month(client, fake_dao):
     response = await client.get("/api/v1/calendar")
 
     assert response.status_code == 422
+    assert fake_dao.calls == []
