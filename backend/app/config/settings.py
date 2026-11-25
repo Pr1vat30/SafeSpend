@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5433/safespend"
     DATABASE_ECHO: bool = False
 
+    # Authentication (RNF_SE_1, RNF_SE_4): set JWT_SECRET_KEY in .env outside development
+    JWT_SECRET_KEY: str = "dev-only-insecure-jwt-key-change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:
