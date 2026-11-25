@@ -89,9 +89,7 @@ async def test_cannot_use_another_users_category(db_client, user_id, other_user_
         headers=headers(other_user_id),
     )
     foreign_category = created.json()["data"]["id_category"]
-    response = await db_client.post(
-        URL, json=payload(foreign_category), headers=headers(user_id)
-    )
+    response = await db_client.post(URL, json=payload(foreign_category), headers=headers(user_id))
     assert response.status_code == 404
 
 
@@ -190,9 +188,7 @@ async def test_update_keeps_the_insertion_validations(db_client, user_id, defaul
     assert response.status_code == 400
 
 
-async def test_delete_removes_the_transaction_and_updates_totals(
-    db_client, user_id, default_ids
-):
+async def test_delete_removes_the_transaction_and_updates_totals(db_client, user_id, default_ids):
     category = default_ids[("Casa", "expense")]
     keep = await create(db_client, user_id, payload(category, amount="10.00"))
     gone = await create(db_client, user_id, payload(category, amount="15.00"))

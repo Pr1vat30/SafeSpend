@@ -14,9 +14,7 @@ class Transaction(Base):
     __tablename__ = "transaction"
     __mapper_args__ = {"eager_defaults": True}
 
-    id_transaction: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
-    )
+    id_transaction: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_user: Mapped[int] = mapped_column(BigInteger, nullable=False)
     id_category: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("category.id_category"), nullable=True

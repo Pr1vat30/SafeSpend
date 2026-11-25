@@ -166,9 +166,7 @@ async def test_delete_does_not_touch_other_users_data(
     assert other["items"][0]["category_name"] == "Altro"
 
 
-async def test_category_used_by_a_recurring_rule_cannot_be_deleted(
-    db_client, db_session, user_id
-):
+async def test_category_used_by_a_recurring_rule_cannot_be_deleted(db_client, db_session, user_id):
     created = (await create_category(db_client, user_id, "Abbonamenti")).json()["data"]
     category_id = created["id_category"]
     await db_session.execute(
@@ -194,9 +192,7 @@ async def test_category_used_by_a_recurring_rule_cannot_be_deleted(
     assert still_used == 1
 
 
-async def test_category_used_by_planned_transactions_explains_why(
-    db_client, db_session, user_id
-):
+async def test_category_used_by_planned_transactions_explains_why(db_client, db_session, user_id):
     created = (await create_category(db_client, user_id, "Visite")).json()["data"]
     category_id = created["id_category"]
     for name in ("Dentista", "Oculista"):
