@@ -27,7 +27,7 @@ async def test_check_and_unlock_buffer_intact_30d() -> None:
     ach_dao.unlock_if_not_exists.return_value = True
 
     profile_dao = AsyncMock()
-    profile_dao.get_by_user_id.return_value = SimpleNamespace(safety_buffer=Decimal("1000.00"))
+    profile_dao.get.return_value = SimpleNamespace(safety_buffer=Decimal("1000.00"))
 
     daily_balances = {ref_date - timedelta(days=i): Decimal("1250.00") for i in range(30)}
     cashflow_engine = AsyncMock()

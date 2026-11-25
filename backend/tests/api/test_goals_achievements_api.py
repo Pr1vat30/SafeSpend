@@ -1,7 +1,18 @@
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
+
+from app.api.controller.profile.dependencies import get_current_user
+from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def override_auth_user():
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id_user=1)
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio
@@ -20,15 +31,15 @@ async def test_goals_crud_and_actions_endpoints(client: AsyncClient) -> None:
         json={
             "name": "Nuovo Laptop",
             "target_amount": "1500.00",
-            "saved_amount": "300.00",
-            "monthly_contribution": "200.00",
+            "installment_frequency": "monthly",
+            "installment_amount": "250.00",
             "deadline": future_date,
-            "priority": 1,
         },
     )
     assert res_create.status_code == 201
     assert res_create.json()["name"] == "Nuovo Laptop"
-    assert res_create.json()["progress_percentage"] == 20.0
+    assert res_create.json()["status"] == "active"
+    assert res_create.json()["progress_percentage"] == 0.0
 
     # 3. Contributo sull'obiettivo
     res_contrib = await client.post(

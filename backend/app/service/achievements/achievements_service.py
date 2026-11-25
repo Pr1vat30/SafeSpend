@@ -4,12 +4,10 @@ from zoneinfo import ZoneInfo
 
 from app.api.dto.achievements.achievements_dto import AchievementStatusDTO
 
-# -- DA AGGIUNGERE QUANDO I DAO SARANNO REALIZZATI --
-# from app.dao.achievement_dao import AchievementDAO
-# from app.dao.profile_dao import ProfileDAO
+# -- DA AGGIUNGERE QUANDO I MODULI DEI COLLEGHI SARANNO SU MAIN --
 # from app.dao.snapshot_dao import BalanceSnapshotDAO
 # from app.service.cashflow_engine import CashFlowEngine
-# ---------------------------------------------------
+# ----------------------------------------------------------------
 
 ROME_TZ = ZoneInfo("Europe/Rome")
 
@@ -37,7 +35,6 @@ class AchievementService:
         """
         today = datetime.now(ROME_TZ).date()
         catalog = await self.achievement_dao.get_all_definitions()
-        # Mappa {id_achievement: unlocked_at} per gli achievement già sbloccati dall'utente
         unlocked_map: dict[int, datetime] = await self.achievement_dao.get_unlocked_map(user_id)
 
         results: list[AchievementStatusDTO] = []
@@ -90,7 +87,6 @@ class AchievementService:
             current = await self._compute_current_progress(user_id, rule_type, target, today)
 
             if current >= target:
-                # INSERT ... ON CONFLICT (id_user, id_achievement) DO NOTHING (RNF_AF_6)
                 inserted = await self.achievement_dao.unlock_if_not_exists(
                     user_id=user_id,
                     achievement_id=ach.id_achievement,
@@ -110,16 +106,10 @@ class AchievementService:
             return await self._count_consecutive_reconciled_weeks(user_id, today, max_weeks=target)
         return 0
 
-    # -- DA SINCRONIZZARE METODI DAO --
     async def _count_consecutive_days_above_buffer(
         self, user_id: int, today: date, max_days: int = 30
     ) -> int:
-        """
-        Regola 1 (RF_PRE_6): 'Buffer intatto'
-        Conta quanti giorni consecutivi fino a oggi il saldo reale/storico
-        non è mai sceso sotto il Safety Buffer.
-        """
-        profile = await self.profile_dao.get_by_user_id(user_id)
+        profile = await self.profile_dao.get(user_id)
         if not profile or profile.safety_buffer <= Decimal("0.00"):
             return 0
 
@@ -141,7 +131,6 @@ class AchievementService:
 
         return streak
 
-    # -- DA SINCRONIZZARE METODI DAO --
     async def _count_consecutive_reconciled_weeks(
         self, user_id: int, today: date, max_weeks: int = 4
     ) -> int:

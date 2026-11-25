@@ -2,45 +2,35 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, status
 
+from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.achievements.achievements_dto import (
     AchievementListResponseDTO,
     AchievementStatusDTO,
 )
 
-# from sqlalchemy.ext.asyncio import AsyncSession
-
-# 1. Import dei DAO e Service reali
+# -- DA DECOMMENTARE PER COLLEGAMENTO REALE --
+# from app.core.dependencies import DbSession
 # from app.dao.achievement_dao import AchievementDAO
-# from app.service.achievements_service import AchievementService
-
-# 2. Import degli altri moduli da collegare in seguito alla loro creazione
-# from app.core.security import get_current_user_id
-# from app.db.session import get_db_session
-# from app.dao.profile_dao import ProfileDAO
+# from app.dao.profile.profile_dao import FinancialProfileDAO
 # from app.dao.snapshot_dao import BalanceSnapshotDAO
+# from app.service.achievements.achievements_service import AchievementService
 # from app.service.cashflow_engine import CashFlowEngine
+#
+# def get_achievement_service(db: DbSession) -> AchievementService:
+#     return AchievementService(
+#         achievement_dao=AchievementDAO(db),
+#         snapshot_dao=BalanceSnapshotDAO(db),
+#         profile_dao=FinancialProfileDAO(db),
+#         cashflow_engine=CashFlowEngine(db),
+#     )
+# ---------------------------------------------
 
 
-# def get_achievement_service(
-#    session: AsyncSession = Depends(get_db_session),
-# ) -> AchievementService:
-#    return AchievementService(
-#        achievement_dao=AchievementDAO(session),
-#        snapshot_dao=BalanceSnapshotDAO(session),
-#        profile_dao=ProfileDAO(session),
-#        cashflow_engine=CashFlowEngine(session),
-#    )
-
-
-# -- DA RIMUOVERE, PROVVISORIO PER TESTING --
-async def get_current_user_id() -> int:
-    return 1
-
-
+# -- DA RIMUOVERE: STUB PROVVISORIO PER TESTING --
 class MockAchievementService:
     @staticmethod
     async def get_user_achievements(user_id: int) -> list[AchievementStatusDTO]:
-        _ = user_id  # Evita il warning di parametro non usato nello stub
+        _ = user_id
         return [
             AchievementStatusDTO(
                 id_achievement=1,
@@ -85,17 +75,10 @@ router = APIRouter(
     summary="Recupera gli achievement e i progressi dell'utente",
 )
 async def get_user_achievements(
-    # -- DA RIMUOVERE PER TESTING --
-    user_id: int = Depends(get_current_user_id),
+    user: CurrentUser,
     achievement_service: MockAchievementService = Depends(get_achievement_service),
 ) -> AchievementListResponseDTO:
-    # ------------------------------
-
-    # async def get_user_achievements(
-    #    user_id: int = Depends(get_current_user_id),
-    #    achievement_service: AchievementService = Depends(get_achievement_service),
-    # ) -> AchievementListResponseDTO:
-    items = await achievement_service.get_user_achievements(user_id)
+    items = await achievement_service.get_user_achievements(user.id_user)
     unlocked_count = sum(1 for item in items if item.unlocked)
 
     return AchievementListResponseDTO(

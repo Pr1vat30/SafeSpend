@@ -2,9 +2,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-GoalStatusType = Literal["ACTIVE", "COMPLETED", "EXPIRED", "CANCELLED"]
+GoalStatusType = Literal["active", "completed", "suspended", "expired"]
+GoalFrequencyType = Literal["weekly", "monthly"]
 
 
 class GoalCreateDTO(BaseModel):
@@ -12,18 +13,25 @@ class GoalCreateDTO(BaseModel):
     target_amount: Decimal = Field(
         ..., gt=Decimal("0.00"), description="Importo target da raggiungere"
     )
-    saved_amount: Decimal = Field(
-        default=Decimal("0.00"), ge=Decimal("0.00"), description="Importo iniziale già accantonato"
+    installment_frequency: GoalFrequencyType = Field(
+        default="monthly", description="Frequenza di accantonamento ('weekly' o 'monthly')"
     )
-    monthly_contribution: Decimal = Field(
-        default=Decimal("0.00"), ge=Decimal("0.00"), description="Quota di accantonamento mensile"
+    installment_amount: Decimal = Field(
+        ..., gt=Decimal("0.00"), description="Quota di accantonamento per periodo"
     )
     deadline: date = Field(..., description="Scadenza prevista")
-    priority: int = Field(default=1, ge=1, le=5, description="Priorità (1 = massima)")
     create_recurring_rule: bool = Field(
         default=True,
-        description="Se True, crea una RecurringRule mensile collegata all'accantonamento",
+        description="Se True, crea una RecurringRule di tipo 'saving' collegata all'obiettivo",
     )
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Il nome dell'obiettivo non può essere vuoto.")
+        return stripped
 
     @field_validator("deadline")
     @classmethod
@@ -32,14 +40,27 @@ class GoalCreateDTO(BaseModel):
             raise ValueError("La scadenza dell'obiettivo deve essere futura rispetto a oggi.")
         return v
 
+    @model_validator(mode="after")
+    def installment_cannot_exceed_target(self) -> "GoalCreateDTO":
+        if self.installment_amount > self.target_amount:
+            raise ValueError("La rata di accantonamento non può superare l'importo target.")
+        return self
+
 
 class GoalUpdateDTO(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     target_amount: Decimal | None = Field(default=None, gt=Decimal("0.00"))
-    monthly_contribution: Decimal | None = Field(default=None, ge=Decimal("0.00"))
+    installment_frequency: GoalFrequencyType | None = Field(default=None)
+    installment_amount: Decimal | None = Field(default=None, gt=Decimal("0.00"))
     deadline: date | None = Field(default=None)
-    priority: int | None = Field(default=None, ge=1, le=5)
     status: GoalStatusType | None = Field(default=None)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Il nome dell'obiettivo non può essere vuoto.")
+        return v.strip() if v is not None else None
 
 
 class GoalExtendDeadlineDTO(BaseModel):
@@ -61,16 +82,16 @@ class GoalResponseDTO(BaseModel):
     id_goal: int
     name: str
     target_amount: Decimal
-    saved_amount: Decimal
+    saved_amount: Decimal = Decimal("0.00")
     remaining_amount: Decimal
-    monthly_contribution: Decimal
+    installment_frequency: GoalFrequencyType
+    installment_amount: Decimal
     deadline: date
-    priority: int
-    status: str
+    status: GoalStatusType
     progress_percentage: float = Field(..., ge=0.0, le=100.0)
     estimated_completion_date: date | None = Field(
         default=None,
-        description="Data stimata di raggiungimento in base al contributo mensile (RF_OBI_3)",
+        description="Data stimata di raggiungimento in base alla rata periodica (RF_OBI_3)",
     )
     is_overdue: bool = Field(
         default=False,

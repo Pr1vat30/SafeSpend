@@ -6,31 +6,19 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException, status
 
 from app.api.dto.goals.goals_dto import (
-    GoalContributionDTO,
     GoalCreateDTO,
     GoalExtendDeadlineDTO,
     GoalListResponseDTO,
     GoalResponseDTO,
     GoalUpdateDTO,
 )
+from app.dao.goals.goal_dao import GoalDAO
+from app.models.goals.goal_model import Goal
 
-# from app.models.goals import Goal -- DA DEFINIRE INSIEME AI DAO
-
-
-# -- STUB TEMPORANEO DA RIMUOVERE QUANDO SI IMPORTA IL MODELLO ORM --
-class Goal:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-
-# ------------------------------------------------------------------
-
-# -- DA DECOMMENTARE QUANDO I MODULI SARANNO DISPONIBILI --
-# from app.dao.goal_dao import GoalDAO
+# -- DA DECOMMENTARE QUANDO I MODULI DEI COLLEGHI SARANNO SU MAIN --
 # from app.service.what_if_simulator import WhatIfSimulator
 # from app.dao.recurring_rule_dao import RecurringRuleDAO
-# --------------------------------------------------------
+# ------------------------------------------------------------------
 
 ROME_TZ = ZoneInfo("Europe/Rome")
 
@@ -40,7 +28,12 @@ class GoalService:
     SS5 - Gestione Obiettivi di Risparmio (RF_OBI_1 .. RF_OBI_4).
     """
 
-    def __init__(self, goal_dao, what_if_simulator=None, recurring_rule_dao=None):
+    def __init__(
+        self,
+        goal_dao: GoalDAO,
+        what_if_simulator=None,
+        recurring_rule_dao=None,
+    ):
         self.goal_dao = goal_dao
         self.what_if_simulator = what_if_simulator
         self.recurring_rule_dao = recurring_rule_dao
@@ -49,9 +42,18 @@ class GoalService:
         goals = await self.goal_dao.get_all_by_user(user_id)
         today = datetime.now(ROME_TZ).date()
 
-        dto_list = [self._to_response_dto(g, today) for g in goals]
-        total_saved = sum((g.saved_amount for g in goals), Decimal("0.00"))
-        total_target = sum((g.target_amount for g in goals), Decimal("0.00"))
+        dto_list: list[GoalResponseDTO] = []
+        total_saved = Decimal("0.00")
+        total_target = Decimal("0.00")
+
+        for g in goals:
+            saved = await self.goal_dao.get_saved_amount(g.id_goal, user_id)
+            rule_id = await self.goal_dao.get_linked_rule_id(g.id_goal, user_id)
+            dto_list.append(
+                self._to_response_dto(g, today, saved_amount=saved, id_recurring_rule=rule_id)
+            )
+            total_saved += saved
+            total_target += g.target_amount
 
         return GoalListResponseDTO(
             goals=dto_list,
@@ -62,46 +64,46 @@ class GoalService:
     async def create_goal(self, user_id: int, payload: GoalCreateDTO) -> GoalResponseDTO:
         today = datetime.now(ROME_TZ).date()
 
-        # Verifica opzionale impatto sul Safety Buffer tramite WhatIfSimulator
         buffer_warning = await self._check_buffer_impact(
             user_id=user_id,
-            monthly_amount=payload.monthly_contribution,
+            installment_amount=payload.installment_amount,
+            installment_frequency=payload.installment_frequency,
             deadline=payload.deadline,
         )
 
-        # -- DA SINCRONIZZARE CON RECURRING RULE --
-        recurring_rule_id = None
-        if (
-            payload.create_recurring_rule
-            and payload.monthly_contribution > Decimal("0.00")
-            and self.recurring_rule_dao
-        ):
-            # Crea regola ricorrente mensile collegata all'accantonamento
+        new_goal = Goal(
+            id_user=user_id,
+            name=payload.name,
+            target_amount=payload.target_amount,
+            deadline=payload.deadline,
+            installment_frequency=payload.installment_frequency,
+            installment_amount=payload.installment_amount,
+            status="active",
+        )
+        saved_goal = await self.goal_dao.create(new_goal)
+
+        # -- DA SINCRONIZZARE CON RECURRING RULE (quando PR #33 va su main) --
+        recurring_rule_id: int | None = None
+        if payload.create_recurring_rule and self.recurring_rule_dao:
             rule = await self.recurring_rule_dao.create_goal_saving_rule(
                 user_id=user_id,
+                goal_id=saved_goal.id_goal,
                 name=f"Accantonamento: {payload.name}",
-                amount=payload.monthly_contribution,
+                amount=payload.installment_amount,
+                frequency=payload.installment_frequency,
                 start_date=today,
                 end_date=payload.deadline,
             )
             recurring_rule_id = rule.id_recurring_rule
-        # ------------------------------------
+        # -------------------------------------------------------------------
 
-        initial_status = "COMPLETED" if payload.saved_amount >= payload.target_amount else "ACTIVE"
-
-        new_goal = Goal(
-            id_user=user_id,
+        return self._to_response_dto(
+            saved_goal,
+            today,
+            saved_amount=Decimal("0.00"),
             id_recurring_rule=recurring_rule_id,
-            name=payload.name,
-            target_amount=payload.target_amount,
-            saved_amount=payload.saved_amount,
-            monthly_contribution=payload.monthly_contribution,
-            deadline=payload.deadline,
-            priority=payload.priority,
-            status=initial_status,
+            buffer_warning=buffer_warning,
         )
-        saved_goal = await self.goal_dao.create(new_goal)
-        return self._to_response_dto(saved_goal, today, buffer_warning=buffer_warning)
 
     async def update_goal(
         self, user_id: int, goal_id: int, payload: GoalUpdateDTO
@@ -113,19 +115,34 @@ class GoalService:
         for field, value in update_data.items():
             setattr(goal, field, value)
 
-        if goal.saved_amount >= goal.target_amount:
-            goal.status = "COMPLETED"
-        elif goal.status == "EXPIRED" and goal.deadline > today:
-            goal.status = "ACTIVE"
+        if goal.installment_amount > goal.target_amount:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La rata di accantonamento non può superare l'importo target.",
+            )
+
+        saved_amount = await self.goal_dao.get_saved_amount(goal.id_goal, user_id)
+        if saved_amount >= goal.target_amount:
+            goal.status = "completed"
+        elif goal.status == "expired" and goal.deadline > today:
+            goal.status = "active"
 
         buffer_warning = await self._check_buffer_impact(
             user_id=user_id,
-            monthly_amount=goal.monthly_contribution,
+            installment_amount=goal.installment_amount,
+            installment_frequency=goal.installment_frequency,
             deadline=goal.deadline,
         )
 
         updated = await self.goal_dao.update(goal)
-        return self._to_response_dto(updated, today, buffer_warning=buffer_warning)
+        rule_id = await self.goal_dao.get_linked_rule_id(updated.id_goal, user_id)
+        return self._to_response_dto(
+            updated,
+            today,
+            saved_amount=saved_amount,
+            id_recurring_rule=rule_id,
+            buffer_warning=buffer_warning,
+        )
 
     async def extend_deadline(
         self, user_id: int, goal_id: int, payload: GoalExtendDeadlineDTO
@@ -144,23 +161,15 @@ class GoalService:
             )
 
         goal.deadline = payload.new_deadline
-        if goal.saved_amount < goal.target_amount:
-            goal.status = "ACTIVE"
+        saved_amount = await self.goal_dao.get_saved_amount(goal.id_goal, user_id)
+        if saved_amount < goal.target_amount:
+            goal.status = "active"
 
         updated = await self.goal_dao.update(goal)
-        return self._to_response_dto(updated, today)
-
-    async def add_contribution(
-        self, user_id: int, goal_id: int, payload: GoalContributionDTO
-    ) -> GoalResponseDTO:
-        """
-        RF_OBI_3: Registra un accantonamento sull'obiettivo e aggiorna l'avanzamento.
-        """
-        goal = await self._get_user_goal_or_404(goal_id, user_id)
-        today = datetime.now(ROME_TZ).date()
-
-        updated = await self.goal_dao.add_contribution(goal, payload.amount)
-        return self._to_response_dto(updated, today)
+        rule_id = await self.goal_dao.get_linked_rule_id(updated.id_goal, user_id)
+        return self._to_response_dto(
+            updated, today, saved_amount=saved_amount, id_recurring_rule=rule_id
+        )
 
     async def delete_goal(self, user_id: int, goal_id: int) -> None:
         goal = await self._get_user_goal_or_404(goal_id, user_id)
@@ -178,65 +187,73 @@ class GoalService:
         return goal
 
     async def _check_buffer_impact(
-        self, user_id: int, monthly_amount: Decimal, deadline: date
+        self,
+        user_id: int,
+        installment_amount: Decimal,
+        installment_frequency: str,
+        deadline: date,
     ) -> str | None:
         """
         RF_OBI_2: Se WhatIfSimulator (B-05) è collegato, verifica se l'accantonamento
-        mensile porta il saldo previsto sotto il Safety Buffer entro la scadenza.
+        periodico porta il saldo previsto sotto il Safety Buffer entro la scadenza.
         """
-        if not self.what_if_simulator or monthly_amount <= Decimal("0.00"):
+        if not self.what_if_simulator or installment_amount <= Decimal("0.00"):
             return None
 
-        # -- DA SINCRONIZZARE CON WHAT-IF --
         sim_result = await self.what_if_simulator.simulate_recurring_expense(
             user_id=user_id,
-            amount=monthly_amount,
+            amount=installment_amount,
+            frequency=installment_frequency,
             end_date=deadline,
         )
         if getattr(sim_result, "breaches_safety_buffer", False):
             return (
-                "Attenzione: questo accantonamento mensile potrebbe portare il tuo saldo "
+                "Attenzione: questo accantonamento periodico potrebbe portare il tuo saldo "
                 "al di sotto del Safety Buffer prima della scadenza."
             )
         return None
 
     def _to_response_dto(
-        self, goal: Goal, today: date, buffer_warning: str | None = None
+        self,
+        goal: Goal,
+        today: date,
+        saved_amount: Decimal = Decimal("0.00"),
+        id_recurring_rule: int | None = None,
+        buffer_warning: str | None = None,
     ) -> GoalResponseDTO:
-        remaining = max(goal.target_amount - goal.saved_amount, Decimal("0.00"))
+        remaining = max(goal.target_amount - saved_amount, Decimal("0.00"))
 
         if goal.target_amount > Decimal("0.00"):
-            raw_pct = float((goal.saved_amount / goal.target_amount) * Decimal("100"))
+            raw_pct = float((saved_amount / goal.target_amount) * Decimal("100"))
             progress_pct = round(min(raw_pct, 100.0), 2)
         else:
             progress_pct = 100.0
 
-        # Calcolo data stimata di raggiungimento
         estimated_date: date | None = None
         if remaining == Decimal("0.00"):
             estimated_date = today
-        elif goal.monthly_contribution > Decimal("0.00"):
-            months_needed = math.ceil(float(remaining / goal.monthly_contribution))
-            estimated_date = today + timedelta(days=months_needed * 30)
+        elif goal.installment_amount > Decimal("0.00"):
+            periods_needed = math.ceil(float(remaining / goal.installment_amount))
+            period_days = 7 if goal.installment_frequency == "weekly" else 30
+            estimated_date = today + timedelta(days=periods_needed * period_days)
 
-        # Verifica scadenza superata senza completamento
         is_overdue = goal.deadline < today and remaining > Decimal("0.00")
-        effective_status = "EXPIRED" if (is_overdue and goal.status == "ACTIVE") else goal.status
+        effective_status = "expired" if (is_overdue and goal.status == "active") else goal.status
 
         return GoalResponseDTO(
             id_goal=goal.id_goal,
             name=goal.name,
             target_amount=goal.target_amount,
-            saved_amount=goal.saved_amount,
+            saved_amount=saved_amount,
             remaining_amount=remaining,
-            monthly_contribution=goal.monthly_contribution,
+            installment_frequency=goal.installment_frequency,  # type: ignore[arg-type]
+            installment_amount=goal.installment_amount,
             deadline=goal.deadline,
-            priority=goal.priority,
-            status=effective_status,
+            status=effective_status,  # type: ignore[arg-type]
             progress_percentage=progress_pct,
             estimated_completion_date=estimated_date,
             is_overdue=is_overdue,
             buffer_warning=buffer_warning,
-            id_recurring_rule=goal.id_recurring_rule,
+            id_recurring_rule=id_recurring_rule,
             created_at=goal.created_at,
         )
