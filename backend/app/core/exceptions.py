@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api.dto.common.response import APIResponse
+from app.api.dto import APIResponse
 from app.config.logging import get_logger
 from app.constants.messages import INVALID_REQUEST_PAYLOAD, UNEXPECTED_ERROR
 

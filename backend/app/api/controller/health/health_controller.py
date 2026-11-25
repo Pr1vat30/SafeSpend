@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.dto.common.response import APIResponse
+from app.api.dto import APIResponse
 from app.constants.messages import HEALTH_PREFIX, HEALTH_TAG
 from app.core.dependencies import DbSession
 
