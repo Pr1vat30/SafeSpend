@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.dependencies import DbSession
 from app.dao.template.template_dao import TemplateDAO
-from app.service.template.template_service import TemplateService
+from app.service import TemplateService
 
 router = APIRouter(prefix="/template", tags=["Template"])
 
