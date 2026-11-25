@@ -36,6 +36,7 @@ export default function CategoriesPage() {
       <h1>Categorie</h1>
       <nav className={styles.nav}>
         <Link href="/transactions">← Transazioni</Link>
+        <Link href="/reconciliation">Riconcilia saldo →</Link>
       </nav>
       {error && <p className={styles.error}>{error}</p>}
       {categories === null && !error && <p className={styles.muted}>Caricamento…</p>}

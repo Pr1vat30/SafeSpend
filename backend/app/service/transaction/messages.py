@@ -1,5 +1,7 @@
 """User-facing messages of the transaction module."""
 
+from decimal import Decimal
+
 CATEGORY_NOT_FOUND = "Categoria non trovata"
 CATEGORY_TYPE_MISMATCH = "La categoria scelta non è valida per questo tipo di transazione"
 CATEGORY_DUPLICATE = "Esiste già una categoria con questo nome"
@@ -15,6 +17,16 @@ TRANSACTION_CREATED = "Transazione registrata"
 TRANSACTION_UPDATED = "Transazione aggiornata"
 TRANSACTION_DELETED = "Transazione eliminata"
 INVALID_PERIOD = "La data di inizio non può essere successiva alla data di fine"
+
+RECONCILIATION_NOT_FOUND = "Riconciliazione non trovata"
+RECONCILIATION_CREATED = "Saldo riconciliato"
+RECONCILIATION_NO_ADJUSTMENT = "Saldo già allineato: nessuna rettifica necessaria"
+FUTURE_RECONCILIATION_DATE = "La data di riconciliazione non può essere futura"
+
+
+def reconciliation_description(calculated: Decimal, real: Decimal) -> str:
+    """Default description for an automatic balance reconciliation adjustment (max 140 chars)."""
+    return f"Rettifica saldo (da {calculated:.2f} € a {real:.2f} €)"[:140]
 
 
 def category_in_use(name: str, rules: int, planned: int) -> str:

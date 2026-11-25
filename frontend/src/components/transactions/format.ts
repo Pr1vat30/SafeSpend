@@ -21,11 +21,21 @@ export function todayIso(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+function normalizeDecimal(raw: string): string {
+  return raw.trim().replace(",", ".");
+}
+
 /** Accepts "12", "12.5", "12,50": at most two decimals, strictly greater than zero. */
 export function parseAmount(raw: string): string | null {
-  const value = raw.trim().replace(",", ".");
+  const value = normalizeDecimal(raw);
   if (!/^\d{1,10}(\.\d{1,2})?$/.test(value)) return null;
   return Number(value) > 0 ? value : null;
+}
+
+/** Accepts signed balances ("0", "-12,50", "1250.00"): up to 10 integer digits and 2 decimals. */
+export function parseSignedAmount(raw: string): string | null {
+  const value = normalizeDecimal(raw);
+  return /^-?\d{1,10}(\.\d{1,2})?$/.test(value) ? value : null;
 }
 
 export function categoryFitsType(categoryType: CategoryType, type: TransactionType): boolean {

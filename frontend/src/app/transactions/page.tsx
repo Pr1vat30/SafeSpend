@@ -124,6 +124,7 @@ export default function TransactionsPage() {
       </div>
       <nav className={styles.nav}>
         <Link href="/categories">Gestisci categorie →</Link>
+        <Link href="/reconciliation">Riconcilia saldo →</Link>
       </nav>
 
       {formTarget && (

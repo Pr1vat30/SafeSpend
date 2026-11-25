@@ -6,7 +6,7 @@ Every query is scoped by `id_user`, so a user can never reach another user's row
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.transaction.transaction_model import Transaction
@@ -96,3 +96,18 @@ class TransactionDAO:
     async def delete(self, transaction: Transaction) -> None:
         await self.db.delete(transaction)
         await self.db.flush()
+
+    async def calculated_balance(self, user_id: int, up_to_date: date | None = None) -> Decimal:
+        """Net balance from the user's transactions (`income - expense + adjustment`)."""
+        signed_amount = case(
+            (Transaction.type == "income", Transaction.amount),
+            (Transaction.type == "expense", -Transaction.amount),
+            (Transaction.type == "adjustment", Transaction.amount),
+            else_=0,
+        )
+        conditions = [Transaction.id_user == user_id]
+        if up_to_date is not None:
+            conditions.append(Transaction.transaction_date <= up_to_date)
+        stmt = select(func.coalesce(func.sum(signed_amount), 0)).where(*conditions)
+        total = await self.db.scalar(stmt)
+        return Decimal(total).quantize(Decimal("0.01"))

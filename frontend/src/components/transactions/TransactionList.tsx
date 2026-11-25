@@ -28,17 +28,23 @@ export function TransactionList({ items, onEdit, onDelete }: TransactionListProp
         <tbody>
           {items.map((item) => {
             const editable = item.type === "income" || item.type === "expense";
-            const sign = item.type === "income" ? "+" : item.type === "expense" ? "−" : "";
+            const amountNum = Number(item.amount);
+            const positive =
+              item.type === "income" || (item.type === "adjustment" && amountNum > 0);
+            const sign =
+              item.type === "income"
+                ? "+"
+                : item.type === "expense"
+                  ? "−"
+                  : amountNum > 0
+                    ? "+"
+                    : "";
             return (
               <tr key={item.id_transaction}>
                 <td>{formatDate(item.transaction_date)}</td>
                 <td>{item.category_name ?? "Rettifica saldo"}</td>
                 <td>{item.description ?? ""}</td>
-                <td
-                  className={`${styles.amount} ${
-                    item.type === "income" ? styles.income : styles.expense
-                  }`}
-                >
+                <td className={`${styles.amount} ${positive ? styles.income : styles.expense}`}>
                   {sign}
                   {formatEuro(item.amount)}
                 </td>

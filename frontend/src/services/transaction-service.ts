@@ -50,6 +50,34 @@ export interface TransactionList {
   count: number;
 }
 
+export interface Reconciliation {
+  id_snapshot: number;
+  real_balance: string;
+  calculated_balance: string;
+  difference: string;
+  reconciliation_date: string;
+  id_adjustment_transaction: number | null;
+  created_at: string;
+}
+
+export interface ReconciliationInput {
+  real_balance: string;
+  reconciliation_date: string;
+  description: string | null;
+}
+
+export interface ReconciliationPreview {
+  reconciliation_date: string;
+  calculated_balance: string;
+  last_reconciliation: Reconciliation | null;
+}
+
+export interface ReconciliationHistory {
+  items: Reconciliation[];
+  count: number;
+  current_calculated_balance: string;
+}
+
 export const EMPTY_FILTERS: TransactionFilters = {
   dateFrom: "",
   dateTo: "",
@@ -115,5 +143,22 @@ export const transactionService = {
       method: "DELETE",
       headers: authHeaders(),
     });
+  },
+
+  previewReconciliation(reconciliationDate?: string): Promise<ReconciliationPreview> {
+    const query = reconciliationDate
+      ? `?reconciliation_date=${encodeURIComponent(reconciliationDate)}`
+      : "";
+    return apiFetch<ReconciliationPreview>(`/reconciliations/preview${query}`, {
+      headers: authHeaders(),
+    });
+  },
+
+  listReconciliations(): Promise<ReconciliationHistory> {
+    return apiFetch<ReconciliationHistory>("/reconciliations", { headers: authHeaders() });
+  },
+
+  reconcileBalance(input: ReconciliationInput): Promise<Reconciliation> {
+    return apiFetch<Reconciliation>("/reconciliations", json("POST", input));
   },
 };
