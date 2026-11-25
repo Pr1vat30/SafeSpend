@@ -2,9 +2,12 @@
 
 from datetime import date, timedelta
 
+from app.service.profile.security import create_access_token
+
 
 def headers(user: int) -> dict[str, str]:
-    return {"X-User-Id": str(user)}
+    token, _ = create_access_token(user)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def days_ago(days: int) -> str:

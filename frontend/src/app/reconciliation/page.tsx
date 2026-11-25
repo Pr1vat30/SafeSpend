@@ -16,6 +16,8 @@ export default function ReconciliationPage() {
   const [reconciliationDate, setReconciliationDate] = useState(todayIso);
   const [calculatedBalance, setCalculatedBalance] = useState<string | null>(null);
   const [history, setHistory] = useState<Reconciliation[] | null>(null);
+  const [daysSinceLast, setDaysSinceLast] = useState<number | null>(null);
+  const [reconciliationReminder, setReconciliationReminder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -31,6 +33,8 @@ export default function ReconciliationPage() {
       .then(([preview, hist]) => {
         if (active) {
           setCalculatedBalance(preview.calculated_balance);
+          setDaysSinceLast(preview.days_since_last_reconciliation);
+          setReconciliationReminder(preview.reconciliation_reminder);
           setHistory(hist.items);
           setError(null);
         }
@@ -77,6 +81,8 @@ export default function ReconciliationPage() {
           calculatedBalance={calculatedBalance}
           reconciliationDate={reconciliationDate}
           history={history}
+          daysSinceLast={daysSinceLast}
+          reconciliationReminder={reconciliationReminder}
           submitting={submitting}
           serverError={submitError}
           statusMessage={statusMessage}

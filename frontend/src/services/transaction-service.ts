@@ -70,6 +70,8 @@ export interface ReconciliationPreview {
   reconciliation_date: string;
   calculated_balance: string;
   last_reconciliation: Reconciliation | null;
+  days_since_last_reconciliation: number | null;
+  reconciliation_reminder: boolean;
 }
 
 export interface ReconciliationHistory {
@@ -86,15 +88,14 @@ export const EMPTY_FILTERS: TransactionFilters = {
 };
 
 /**
- * TEMPORARY AUTHENTICATION (not a security mechanism). Until the Profile module is merged the
- * backend identifies the user through the `X-User-Id` header: set NEXT_PUBLIC_DEV_USER_ID to the
- * id of an existing user (default: 1). This is the only place in the frontend that knows about
- * it: when the definitive authentication lands, replace this function and nothing else (changes
- * to `src/lib/api-client.ts` go in a `chore/` PR). Backend counterpart:
- * `backend/app/api/controller/transaction/dependencies.py`.
+ * Uses the JWT issued by the Profile module (stored in localStorage as `safespend_token`, or
+ * `NEXT_PUBLIC_DEV_TOKEN` during local development before login UI is wired).
  */
 function authHeaders(): Record<string, string> {
-  return { "X-User-Id": process.env.NEXT_PUBLIC_DEV_USER_ID ?? "1" };
+  const token =
+    (typeof window !== "undefined" ? window.localStorage.getItem("safespend_token") : null) ??
+    process.env.NEXT_PUBLIC_DEV_TOKEN;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function json(method: string, body: unknown): RequestInit {

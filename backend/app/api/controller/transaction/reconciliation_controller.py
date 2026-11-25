@@ -36,11 +36,15 @@ async def preview_reconciliation(
     reconciliation_date: Annotated[date | None, Query()] = None,
 ):
     """Calculated balance up to `reconciliation_date` and the latest reconciliation snapshot."""
-    target_date, calculated, latest = await service.preview(user_id, reconciliation_date)
+    target_date, calculated, latest, days_since, reminder = await service.preview(
+        user_id, reconciliation_date
+    )
     body = ReconciliationPreview(
         reconciliation_date=target_date,
         calculated_balance=calculated,
         last_reconciliation=ReconciliationRead.model_validate(latest) if latest else None,
+        days_since_last_reconciliation=days_since,
+        reconciliation_reminder=reminder,
     )
     return APIResponse.ok(body)
 

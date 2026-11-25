@@ -16,16 +16,16 @@ from app.api.dto.transaction.schema import (
     TransactionUpdate,
 )
 from app.core.dependencies import DbSession
+from app.dao.transaction.balance_snapshot_dao import BalanceSnapshotDAO
 from app.dao.transaction.category_dao import CategoryDAO
 from app.dao.transaction.transaction_dao import TransactionDAO
-from app.service.transaction import messages
 from app.service.transaction.transaction_service import TransactionService
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
 
 def get_transaction_service(db: DbSession) -> TransactionService:
-    return TransactionService(TransactionDAO(db), CategoryDAO(db))
+    return TransactionService(TransactionDAO(db), CategoryDAO(db), BalanceSnapshotDAO(db))
 
 
 Service = Annotated[TransactionService, Depends(get_transaction_service)]
@@ -54,7 +54,7 @@ async def list_transactions(
 
 @router.post("", response_model=APIResponse[TransactionRead], status_code=status.HTTP_201_CREATED)
 async def create_transaction(payload: TransactionCreate, service: Service, user_id: CurrentUserId):
-    transaction = await service.create_transaction(
+    transaction, message = await service.create_transaction(
         user_id,
         payload.type,
         payload.amount,
@@ -62,7 +62,7 @@ async def create_transaction(payload: TransactionCreate, service: Service, user_
         payload.id_category,
         payload.description,
     )
-    return APIResponse.ok(TransactionRead.model_validate(transaction), messages.TRANSACTION_CREATED)
+    return APIResponse.ok(TransactionRead.model_validate(transaction), message)
 
 
 @router.get("/{transaction_id}", response_model=APIResponse[TransactionRead])
@@ -75,7 +75,7 @@ async def get_transaction(transaction_id: int, service: Service, user_id: Curren
 async def update_transaction(
     transaction_id: int, payload: TransactionUpdate, service: Service, user_id: CurrentUserId
 ):
-    transaction = await service.update_transaction(
+    transaction, message = await service.update_transaction(
         user_id,
         transaction_id,
         payload.type,
@@ -84,10 +84,10 @@ async def update_transaction(
         payload.id_category,
         payload.description,
     )
-    return APIResponse.ok(TransactionRead.model_validate(transaction), messages.TRANSACTION_UPDATED)
+    return APIResponse.ok(TransactionRead.model_validate(transaction), message)
 
 
 @router.delete("/{transaction_id}", response_model=APIResponse[None])
 async def delete_transaction(transaction_id: int, service: Service, user_id: CurrentUserId):
-    await service.delete_transaction(user_id, transaction_id)
-    return APIResponse.ok(None, messages.TRANSACTION_DELETED)
+    message = await service.delete_transaction(user_id, transaction_id)
+    return APIResponse.ok(None, message)

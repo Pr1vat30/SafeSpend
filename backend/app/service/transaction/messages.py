@@ -1,5 +1,6 @@
 """User-facing messages of the transaction module."""
 
+from datetime import date
 from decimal import Decimal
 
 CATEGORY_NOT_FOUND = "Categoria non trovata"
@@ -27,6 +28,15 @@ FUTURE_RECONCILIATION_DATE = "La data di riconciliazione non può essere futura"
 def reconciliation_description(calculated: Decimal, real: Decimal) -> str:
     """Default description for an automatic balance reconciliation adjustment (max 140 chars)."""
     return f"Rettifica saldo (da {calculated:.2f} € a {real:.2f} €)"[:140]
+
+
+def transaction_before_reconciliation(base_message: str, reconciliation_date: date) -> str:
+    """RF_SAL_1: warn that movements on or before the last reconciliation do not alter B0."""
+    return (
+        f"{base_message}. La data è uguale o anteriore all'ultima riconciliazione "
+        f"({reconciliation_date:%d/%m/%Y}), quindi il saldo di partenza non cambia: "
+        "esegui una nuova riconciliazione se desideri aggiornare il saldo."
+    )
 
 
 def category_in_use(name: str, rules: int, planned: int) -> str:

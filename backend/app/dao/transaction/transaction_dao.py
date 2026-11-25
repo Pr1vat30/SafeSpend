@@ -97,7 +97,12 @@ class TransactionDAO:
         await self.db.delete(transaction)
         await self.db.flush()
 
-    async def calculated_balance(self, user_id: int, up_to_date: date | None = None) -> Decimal:
+    async def calculated_balance(
+        self,
+        user_id: int,
+        up_to_date: date | None = None,
+        after_date: date | None = None,
+    ) -> Decimal:
         """Net balance from the user's transactions (`income - expense + adjustment`)."""
         signed_amount = case(
             (Transaction.type == "income", Transaction.amount),
@@ -106,6 +111,8 @@ class TransactionDAO:
             else_=0,
         )
         conditions = [Transaction.id_user == user_id]
+        if after_date is not None:
+            conditions.append(Transaction.transaction_date > after_date)
         if up_to_date is not None:
             conditions.append(Transaction.transaction_date <= up_to_date)
         stmt = select(func.coalesce(func.sum(signed_amount), 0)).where(*conditions)

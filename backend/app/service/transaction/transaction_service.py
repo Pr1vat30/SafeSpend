@@ -24,6 +24,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.core.exceptions import AppException, NotFoundError
+from app.dao.transaction.balance_snapshot_dao import BalanceSnapshotDAO
 from app.dao.transaction.category_dao import CategoryDAO
 from app.dao.transaction.transaction_dao import TransactionDAO
 from app.models.transaction.transaction_model import Transaction
@@ -31,9 +32,15 @@ from app.service.transaction import messages
 
 
 class TransactionService:
-    def __init__(self, dao: TransactionDAO, category_dao: CategoryDAO):
+    def __init__(
+        self,
+        dao: TransactionDAO,
+        category_dao: CategoryDAO,
+        snapshot_dao: BalanceSnapshotDAO | None = None,
+    ):
         self.dao = dao
         self.category_dao = category_dao
+        self.snapshot_dao = snapshot_dao
 
     async def create_transaction(
         self,
@@ -43,9 +50,9 @@ class TransactionService:
         transaction_date: date,
         id_category: int,
         description: str | None,
-    ) -> Transaction:
+    ) -> tuple[Transaction, str]:
         await self._check_category(user_id, id_category, transaction_type)
-        return await self.dao.create(
+        created = await self.dao.create(
             id_user=user_id,
             type=transaction_type,
             amount=amount,
@@ -54,6 +61,10 @@ class TransactionService:
             description=description,
             origin="manual",
         )
+        notice = await self._message_for_dates(
+            user_id, messages.TRANSACTION_CREATED, transaction_date
+        )
+        return created, notice
 
     async def list_transactions(
         self,
@@ -87,10 +98,11 @@ class TransactionService:
         transaction_date: date,
         id_category: int,
         description: str | None,
-    ) -> Transaction:
+    ) -> tuple[Transaction, str]:
         transaction = await self._get_editable(user_id, transaction_id)
+        old_date = transaction.transaction_date
         await self._check_category(user_id, id_category, transaction_type)
-        return await self.dao.update(
+        updated = await self.dao.update(
             transaction,
             type=transaction_type,
             amount=amount,
@@ -98,10 +110,27 @@ class TransactionService:
             id_category=id_category,
             description=description,
         )
+        notice = await self._message_for_dates(
+            user_id, messages.TRANSACTION_UPDATED, old_date, transaction_date
+        )
+        return updated, notice
 
-    async def delete_transaction(self, user_id: int, transaction_id: int) -> None:
+    async def delete_transaction(self, user_id: int, transaction_id: int) -> str:
         transaction = await self._get_editable(user_id, transaction_id)
+        old_date = transaction.transaction_date
         await self.dao.delete(transaction)
+        return await self._message_for_dates(user_id, messages.TRANSACTION_DELETED, old_date)
+
+    async def _message_for_dates(self, user_id: int, base_message: str, *dates: date) -> str:
+        """RF_SAL_1: warn if a movement falls on or before the latest reconciliation date."""
+        if self.snapshot_dao is None:
+            return base_message
+        latest = await self.snapshot_dao.get_latest(user_id)
+        if latest is not None and any(d <= latest.reconciliation_date for d in dates):
+            return messages.transaction_before_reconciliation(
+                base_message, latest.reconciliation_date
+            )
+        return base_message
 
     async def _get_editable(self, user_id: int, transaction_id: int) -> Transaction:
         transaction = await self.get_transaction(user_id, transaction_id)

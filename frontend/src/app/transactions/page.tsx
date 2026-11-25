@@ -7,12 +7,13 @@ import { ConfirmDialog } from "@/components/transactions/ConfirmDialog";
 import { TransactionFilters } from "@/components/transactions/TransactionFilters";
 import { TransactionForm } from "@/components/transactions/TransactionForm";
 import { TransactionList } from "@/components/transactions/TransactionList";
-import { errorMessage, formatEuro } from "@/components/transactions/format";
+import { errorMessage, formatDate, formatEuro } from "@/components/transactions/format";
 import styles from "@/components/transactions/transactions.module.css";
 import {
   EMPTY_FILTERS,
   transactionService,
   type Category,
+  type Reconciliation,
   type Transaction,
   type TransactionFilters as Filters,
   type TransactionInput,
@@ -35,13 +36,17 @@ export default function TransactionsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [toDelete, setToDelete] = useState<Transaction | null>(null);
+  const [lastReconciliation, setLastReconciliation] = useState<Reconciliation | null>(null);
+  const [reconciliationNotice, setReconciliationNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    transactionService
-      .listCategories()
-      .then((result) => {
-        if (active) setCategories(result);
+    Promise.all([transactionService.listCategories(), transactionService.previewReconciliation()])
+      .then(([cats, preview]) => {
+        if (active) {
+          setCategories(cats);
+          setLastReconciliation(preview.last_reconciliation);
+        }
       })
       .catch((e: unknown) => {
         if (active) setError(errorMessage(e));
@@ -69,16 +74,36 @@ export default function TransactionsPage() {
     };
   }, [filters, version]);
 
+  function checkReconciliationNotice(...dates: string[]) {
+    if (
+      lastReconciliation &&
+      dates.some((d) => d <= lastReconciliation.reconciliation_date)
+    ) {
+      setReconciliationNotice(
+        `Hai modificato un movimento con data uguale o anteriore all'ultima riconciliazione (${formatDate(lastReconciliation.reconciliation_date)}): il saldo di partenza non cambia.`,
+      );
+    } else {
+      setReconciliationNotice(null);
+    }
+  }
+
   async function handleSubmit(input: TransactionInput) {
     setSubmitting(true);
     setFormError(null);
     try {
+      const previousDate =
+        formTarget && formTarget !== "new" ? formTarget.transaction_date : null;
       if (formTarget && formTarget !== "new") {
         await transactionService.update(formTarget.id_transaction, input);
       } else {
         await transactionService.create(input);
       }
       setFormTarget(null);
+      if (previousDate) {
+        checkReconciliationNotice(previousDate, input.transaction_date);
+      } else {
+        checkReconciliationNotice(input.transaction_date);
+      }
       // CASH FLOW: refresh balance / STS / projections here when the Cash Flow screens exist.
       setVersion((v) => v + 1);
     } catch (e) {
@@ -92,8 +117,10 @@ export default function TransactionsPage() {
     if (!toDelete) return;
     setSubmitting(true);
     try {
+      const deletedDate = toDelete.transaction_date;
       await transactionService.remove(toDelete.id_transaction);
       setToDelete(null);
+      checkReconciliationNotice(deletedDate);
       // CASH FLOW: refresh balance / STS / projections here when the Cash Flow screens exist.
       setVersion((v) => v + 1);
     } catch (e) {
@@ -145,6 +172,13 @@ export default function TransactionsPage() {
         onChange={setFilters}
         onReset={() => setFilters(EMPTY_FILTERS)}
       />
+
+      {reconciliationNotice && (
+        <p className={styles.panel} role="status">
+          {reconciliationNotice}{" "}
+          <Link href="/reconciliation">Esegui una nuova riconciliazione →</Link>
+        </p>
+      )}
 
       {error && <p className={styles.error}>{error}</p>}
 

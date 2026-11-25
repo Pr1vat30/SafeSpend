@@ -185,3 +185,89 @@ async def test_history_order_detail_and_user_isolation(db_client, user_id, other
     assert (
         await db_client.get(f"{URL}/{newer['id_snapshot']}", headers=headers(other_user_id))
     ).status_code == 404
+
+
+async def test_movements_on_or_before_reconciliation_do_not_change_b0_and_warn(
+    db_client, user_id, default_ids
+):
+    salary = default_ids[("Stipendio", "income")]
+    food = default_ids[("Alimentari", "expense")]
+
+    await db_client.post(
+        URL,
+        json={"real_balance": "500.00", "reconciliation_date": days_ago(3)},
+        headers=headers(user_id),
+    )
+
+    # Transaction after reconciliation (days_ago(1) > days_ago(3)) updates B0.
+    after_resp = await db_client.post(
+        TRANSACTIONS,
+        json=payload(salary, type="income", amount="100.00", transaction_date=days_ago(1)),
+        headers=headers(user_id),
+    )
+    assert after_resp.status_code == 201
+    assert "nuova riconciliazione" not in after_resp.json()["message"].lower()
+
+    preview = (await db_client.get(f"{URL}/preview", headers=headers(user_id))).json()["data"]
+    assert Decimal(preview["calculated_balance"]) == Decimal("600.00")
+
+    # Movement on or before reconciliation (days_ago(4) <= days_ago(3)) warns and keeps B0=600.
+    before_resp = await db_client.post(
+        TRANSACTIONS,
+        json=payload(food, type="expense", amount="50.00", transaction_date=days_ago(4)),
+        headers=headers(user_id),
+    )
+    assert before_resp.status_code == 201
+    assert "nuova riconciliazione" in before_resp.json()["message"].lower()
+    tx_id = before_resp.json()["data"]["id_transaction"]
+
+    preview_after_backdated = (
+        await db_client.get(f"{URL}/preview", headers=headers(user_id))
+    ).json()["data"]
+    assert Decimal(preview_after_backdated["calculated_balance"]) == Decimal("600.00")
+
+    edit_resp = await db_client.put(
+        f"{TRANSACTIONS}/{tx_id}",
+        json=payload(food, type="expense", amount="75.00", transaction_date=days_ago(3)),
+        headers=headers(user_id),
+    )
+    assert edit_resp.status_code == 200
+    assert "nuova riconciliazione" in edit_resp.json()["message"].lower()
+
+    del_resp = await db_client.delete(f"{TRANSACTIONS}/{tx_id}", headers=headers(user_id))
+    assert del_resp.status_code == 200
+    assert "nuova riconciliazione" in del_resp.json()["message"].lower()
+
+
+async def test_reconciliation_reminder_triggers_after_seven_days(db_client, user_id):
+    await db_client.post(
+        URL,
+        json={"real_balance": "100.00", "reconciliation_date": days_ago(7)},
+        headers=headers(user_id),
+    )
+    seven_days = (await db_client.get(f"{URL}/preview", headers=headers(user_id))).json()["data"]
+    assert seven_days["days_since_last_reconciliation"] == 7
+    assert seven_days["reconciliation_reminder"] is False
+
+    await db_client.post(
+        URL,
+        json={"real_balance": "100.00", "reconciliation_date": days_ago(8)},
+        headers=headers(user_id),
+    )
+    # Latest snapshot by reconciliation_date is still days_ago(7) unless no newer exists;
+    # check with a fresh user via another snapshot date or test days_ago(8) first:
+
+
+async def test_reconciliation_reminder_true_when_latest_older_than_seven_days(
+    db_client, other_user_id
+):
+    await db_client.post(
+        URL,
+        json={"real_balance": "100.00", "reconciliation_date": days_ago(8)},
+        headers=headers(other_user_id),
+    )
+    eight_days = (await db_client.get(f"{URL}/preview", headers=headers(other_user_id))).json()[
+        "data"
+    ]
+    assert eight_days["days_since_last_reconciliation"] == 8
+    assert eight_days["reconciliation_reminder"] is True
