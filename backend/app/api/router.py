@@ -2,10 +2,16 @@
 
 from fastapi import APIRouter
 
+from app.api.controller.achievements.achievements_controller import (
+    router as achievements_router,
+)
+from app.api.controller.goals.goals_controller import router as goals_router
 from app.api.controller.health.health_controller import router as health_router
 from app.api.controller.profile.router import router as profile_router
 
 api_router = APIRouter()
+api_router.include_router(achievements_router)
+api_router.include_router(goals_router)
 api_router.include_router(health_router)
 api_router.include_router(profile_router)
 # api_router.include_router(<module>_router)
