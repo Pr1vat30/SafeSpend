@@ -13,7 +13,8 @@ from app.service.calendar.calendar_service import CalendarService
 
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 
-MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+# Year from 1000: `date` has no year 0, so "0000-05" would otherwise fail with a 500.
+MONTH_PATTERN = r"^[1-9]\d{3}-(0[1-9]|1[0-2])$"
 
 
 def get_calendar_service(db: DbSession) -> CalendarService:

@@ -78,6 +78,11 @@ def test_unknown_frequency_is_rejected_even_outside_the_period(first):
 # --- CalendarService.get_month --------------------------------------------------------------
 
 
+async def december(dao: FakeCalendarDAO):
+    """Calendar of December 2026 for user 1."""
+    return await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+
+
 async def test_get_month_groups_entries_by_day_with_totals():
     dao = FakeCalendarDAO(
         rules=[
@@ -99,7 +104,7 @@ async def test_get_month_groups_entries_by_day_with_totals():
             ),
         ]
     )
-    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+    calendar = await december(dao)
 
     period = (1, date(2026, 12, 1), date(2026, 12, 31))
     assert dao.calls == [("rules", *period), ("planned", *period)]
@@ -123,7 +128,7 @@ async def test_get_month_counts_every_weekly_occurrence():
             )
         ]
     )
-    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+    calendar = await december(dao)
 
     assert len(calendar.days) == 5  # 2, 9, 16, 23, 30 December
     assert calendar.total_expense == Decimal("100.00")
@@ -131,7 +136,7 @@ async def test_get_month_counts_every_weekly_occurrence():
 
 async def test_get_month_shows_a_planned_movement_on_its_date():
     dao = FakeCalendarDAO(planned=[planned()])
-    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+    calendar = await december(dao)
 
     assert [d.date for d in calendar.days] == [date(2026, 12, 20)]
     (entry,) = calendar.days[0].entries
@@ -143,9 +148,20 @@ async def test_get_month_shows_a_planned_movement_on_its_date():
     assert calendar.total_expense == Decimal("150.00")
 
 
-async def test_get_month_merges_recurring_and_planned_on_the_same_day():
+async def test_get_month_orders_a_day_by_type_then_name_with_the_totals():
+    """Recurring and planned entries of the same day, goal allocations (RF_CG_1) included:
+    incomes first, then expenses, then savings; by name within each type."""
     dao = FakeCalendarDAO(
-        rules=[rule()],
+        rules=[
+            rule(),
+            rule(
+                id_recurring_rule=2,
+                name="Accantonamento Vacanze",
+                type="saving",
+                amount=Decimal("100.00"),
+                category_name="Risparmio",
+            ),
+        ],
         planned=[
             planned(planned_date=date(2026, 12, 10)),
             planned(
@@ -157,17 +173,18 @@ async def test_get_month_merges_recurring_and_planned_on_the_same_day():
             ),
         ],
     )
-    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+    calendar = await december(dao)
 
     (day_10,) = calendar.days
-    # Incomes first, then expenses by name.
-    assert [(e.source, e.name) for e in day_10.entries] == [
-        ("planned", "Rimborso"),
-        ("planned", "Dentista"),
-        ("recurring", "Palestra"),
+    assert [(e.type, e.source, e.name) for e in day_10.entries] == [
+        ("income", "planned", "Rimborso"),
+        ("expense", "planned", "Dentista"),
+        ("expense", "recurring", "Palestra"),
+        ("saving", "recurring", "Accantonamento Vacanze"),
     ]
     assert day_10.total_income == calendar.total_income == Decimal("80.00")
     assert day_10.total_expense == calendar.total_expense == Decimal("200.00")
+    assert day_10.total_saving == calendar.total_saving == Decimal("100.00")
 
 
 async def test_get_month_without_movements_is_empty():
@@ -177,35 +194,3 @@ async def test_get_month_without_movements_is_empty():
     assert calendar.total_income == Decimal("0.00")
     assert calendar.total_expense == Decimal("0.00")
     assert calendar.total_saving == Decimal("0.00")
-
-
-async def test_get_month_shows_goal_allocations_after_incomes_and_expenses():
-    """RF_CG_1: the calendar also shows the goal allocations (`saving` rules of SS5)."""
-    dao = FakeCalendarDAO(
-        rules=[
-            rule(),
-            rule(
-                id_recurring_rule=2,
-                name="Accantonamento Vacanze",
-                type="saving",
-                amount=Decimal("100.00"),
-                id_category=9,
-                category_name="Risparmio",
-            ),
-        ],
-        planned=[
-            planned(
-                name="Rimborso",
-                type="income",
-                amount=Decimal("80.00"),
-                planned_date=date(2026, 12, 10),
-            )
-        ],
-    )
-    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
-
-    (day_10,) = calendar.days
-    assert [e.type for e in day_10.entries] == ["income", "expense", "saving"]
-    assert day_10.total_income == calendar.total_income == Decimal("80.00")
-    assert day_10.total_expense == calendar.total_expense == Decimal("50.00")
-    assert day_10.total_saving == calendar.total_saving == Decimal("100.00")

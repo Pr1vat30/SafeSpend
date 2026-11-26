@@ -92,7 +92,9 @@ async def test_get_calendar_returns_the_month_of_the_authenticated_user(
     assert {call[1] for call in fake_dao.calls} == {42}
 
 
-@pytest.mark.parametrize("month", ["2026-13", "2026-1", "dicembre", "2026-12-01"])
+@pytest.mark.parametrize(
+    "month", ["2026-13", "2026-00", "2026-1", "0000-05", "dicembre", "2026-12-01"]
+)
 async def test_get_calendar_rejects_an_invalid_month(client, fake_dao, logged_in, month):
     response = await client.get("/api/v1/calendar", params={"month": month})
 
