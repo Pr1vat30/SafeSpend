@@ -4,15 +4,20 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from app.api.dto.cashflow.schema import DailyBalanceRead, ProjectionRead
-from app.core.exceptions import ConflictError
+from app.core.exceptions import AppException, ConflictError
 from app.dao.cashflow.cashflow_dao import CashFlowDAO, PlannedMovement
 from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
+from app.service.cashflow.forecast_engine import ForecastEngine
+from app.service.cashflow.forecast_strategy import Percentile75Strategy
 from app.service.cashflow.recurrences import expand_occurrences
 
 
 class CashFlowService:
-    def __init__(self, dao: CashFlowDAO):
+    def __init__(self, dao: CashFlowDAO, forecast_engine: ForecastEngine | None = None):
         self.dao = dao
+        if forecast_engine is None:
+            forecast_engine = ForecastEngine(dao, Percentile75Strategy())
+        self.forecast_engine = forecast_engine
 
     async def calculate_cash_flow(
         self,
@@ -20,6 +25,7 @@ class CashFlowService:
         as_of: date,
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
+        last_installment_date: date | None = None,
     ) -> ProjectionRead:
         settings = await self.dao.get_projection_settings(id_user)
         if settings is None:
@@ -31,6 +37,18 @@ class CashFlowService:
 
         end_date = as_of + timedelta(days=settings.horizon_days - 1)
 
+        if last_installment_date is not None:
+            limit_year = as_of.year + 2
+            limit_day = min(as_of.day, monthrange(limit_year, as_of.month)[1])
+            latest_allowed = date(limit_year, as_of.month, limit_day)
+
+            if last_installment_date > latest_allowed:
+                raise AppException("L'ultima rata supera il limite di 24 mesi.")
+
+            end_date = max(end_date, last_installment_date)
+
+        horizon_days = (end_date - as_of).days + 1
+
         planned_movements = await self.dao.get_planned_transactions(id_user, as_of, end_date)
         recurring_rules = await self.dao.get_recurring_rules(id_user, as_of, end_date)
         daily_changes = self.build_daily_changes(
@@ -40,6 +58,13 @@ class CashFlowService:
         income_rules = await self.dao.get_income_rules(id_user, as_of)
         next_income_date = self.get_next_income_date(income_rules, as_of)
 
+        if forecast_expenses is None:
+            forecast_expenses = await self.forecast_engine.forecast_daily_expenses(
+                id_user=id_user,
+                as_of=as_of,
+                horizon_days=horizon_days,
+            )
+
         monthly_estimate = settings.estimated_variable_expenses
         estimate_missing = forecast_expenses is None and monthly_estimate is None
 
@@ -47,13 +72,13 @@ class CashFlowService:
             variable_expenses = forecast_expenses
         elif monthly_estimate is not None:
             variable_expenses = self.distribute_monthly_estimate(
-                monthly_estimate, as_of, settings.horizon_days
+                monthly_estimate, as_of, horizon_days
             )
         else:
             variable_expenses = {}
 
         daily_balances = self.project_daily_balances(
-            starting_balance, as_of, settings.horizon_days, daily_changes, variable_expenses
+            starting_balance, as_of, horizon_days, daily_changes, variable_expenses
         )
         projection = self.summarize_projection(
             daily_balances, settings.safety_buffer, next_income_date
@@ -159,7 +184,6 @@ class CashFlowService:
 
         for rule in income_rules:
             start = max(as_of + timedelta(days=1), rule.first_occurrence_date)
-
             if rule.last_processed_occurrence_date is not None:
                 start = max(start, rule.last_processed_occurrence_date + timedelta(days=1))
 

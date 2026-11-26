@@ -49,6 +49,38 @@ class CashFlowDAO:
         result = await self.db.execute(query, {"id_user": id_user, "as_of": as_of})
         return result.scalar_one_or_none()
 
+    async def get_first_reconciliation_date(self, id_user: int, as_of: date) -> date | None:
+        query = text("""
+            SELECT MIN(reconciliation_date)
+            FROM balance_snapshot
+            WHERE id_user = :id_user
+              AND reconciliation_date <= :as_of
+        """)
+
+        result = await self.db.execute(query, {"id_user": id_user, "as_of": as_of})
+        return result.scalar_one()
+
+    async def get_daily_variable_expenses(
+        self, id_user: int, start_date: date, as_of: date
+    ) -> dict[tuple[date, int], Decimal]:
+        query = text("""
+            SELECT transaction_date, id_category, SUM(amount) AS total
+            FROM "transaction"
+            WHERE id_user = :id_user
+              AND transaction_date >= :start_date
+              AND transaction_date < :as_of
+              AND type = 'expense'
+              AND origin IN ('manual', 'ocr', 'planned')
+            GROUP BY transaction_date, id_category
+            ORDER BY transaction_date, id_category
+        """)
+
+        result = await self.db.execute(
+            query,
+            {"id_user": id_user, "start_date": start_date, "as_of": as_of},
+        )
+        return {(day, category_id): total for day, category_id, total in result}
+
     async def get_projection_settings(self, id_user: int) -> ProjectionSettings | None:
         query = text("""
             SELECT safety_buffer, horizon_days, estimated_variable_expenses
