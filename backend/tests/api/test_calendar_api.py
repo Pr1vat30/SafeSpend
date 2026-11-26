@@ -1,9 +1,14 @@
-"""API tests of the income/expense calendar (RF_CG_1). The DAO is replaced by a fake one."""
+"""API tests of the income/expense calendar (RF_CG_1).
+
+The DAO is replaced by a fake one and the authenticated user by a fixed one.
+"""
 
 import pytest
 
 from app.api.controller.calendar.calendar_controller import get_calendar_service
+from app.api.controller.profile.dependencies import get_current_user
 from app.main import app
+from app.models.profile.profile_model import User
 from app.service.calendar.calendar_service import CalendarService
 from tests.calendar_fakes import FakeCalendarDAO, planned, rule
 
@@ -17,7 +22,22 @@ def fake_dao():
     return dao
 
 
-async def test_get_calendar_returns_the_month(client, fake_dao):
+@pytest.fixture
+def logged_in():
+    app.dependency_overrides[get_current_user] = lambda: User(id_user=42)
+
+
+async def test_get_calendar_requires_authentication(client, fake_dao):
+    response = await client.get("/api/v1/calendar", params={"month": "2026-12"})
+
+    assert response.status_code == 401
+    assert response.json()["success"] is False
+    assert fake_dao.calls == []
+
+
+async def test_get_calendar_returns_the_month_of_the_authenticated_user(
+    client, fake_dao, logged_in
+):
     response = await client.get("/api/v1/calendar", params={"month": "2026-12"})
 
     assert response.status_code == 200
@@ -27,11 +47,13 @@ async def test_get_calendar_returns_the_month(client, fake_dao):
         "month": "2026-12",
         "total_income": "0.00",
         "total_expense": "200.00",
+        "total_saving": "0.00",
         "days": [
             {
                 "date": "2026-12-10",
                 "total_income": "0.00",
                 "total_expense": "50.00",
+                "total_saving": "0.00",
                 "entries": [
                     {
                         "source": "recurring",
@@ -50,6 +72,7 @@ async def test_get_calendar_returns_the_month(client, fake_dao):
                 "date": "2026-12-20",
                 "total_income": "0.00",
                 "total_expense": "150.00",
+                "total_saving": "0.00",
                 "entries": [
                     {
                         "source": "planned",
@@ -66,10 +89,11 @@ async def test_get_calendar_returns_the_month(client, fake_dao):
             },
         ],
     }
+    assert {call[1] for call in fake_dao.calls} == {42}
 
 
 @pytest.mark.parametrize("month", ["2026-13", "2026-1", "dicembre", "2026-12-01"])
-async def test_get_calendar_rejects_an_invalid_month(client, fake_dao, month):
+async def test_get_calendar_rejects_an_invalid_month(client, fake_dao, logged_in, month):
     response = await client.get("/api/v1/calendar", params={"month": month})
 
     assert response.status_code == 422
@@ -77,7 +101,7 @@ async def test_get_calendar_rejects_an_invalid_month(client, fake_dao, month):
     assert fake_dao.calls == []
 
 
-async def test_get_calendar_requires_the_month(client, fake_dao):
+async def test_get_calendar_requires_the_month(client, fake_dao, logged_in):
     response = await client.get("/api/v1/calendar")
 
     assert response.status_code == 422

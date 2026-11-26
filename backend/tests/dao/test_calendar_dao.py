@@ -94,21 +94,22 @@ async def add_planned(db, user, name, *, planned_date, status="planned", type="e
     )
 
 
-async def test_find_active_rules_keeps_only_active_incomes_and_expenses_of_the_period(db, user):
+async def test_find_active_rules_keeps_only_the_active_rules_of_the_period(db, user):
     await add_rule(db, user, "Palestra", first=date(2026, 11, 10))
     await add_rule(db, user, "Stipendio", type="income", first=date(2026, 10, 27))
     await add_rule(db, user, "Inizia a fine mese", first=date(2026, 12, 31))
     await add_rule(db, user, "Finisce a inizio mese", first=date(2026, 1, 1), end=date(2026, 12, 1))
-    # Left out: suspended, terminated, goal allocation, starts later, already ended.
+    await add_rule(db, user, "Accantonamento", type="saving", first=date(2026, 11, 1))
+    # Left out: suspended, terminated, starts later, already ended.
     await add_rule(db, user, "Sospesa", status="suspended", first=date(2026, 11, 1))
     await add_rule(db, user, "Terminata", status="terminated", first=date(2026, 11, 1))
-    await add_rule(db, user, "Accantonamento", type="saving", first=date(2026, 11, 1))
     await add_rule(db, user, "Inizia a gennaio", first=date(2027, 1, 1))
     await add_rule(db, user, "Finita a novembre", first=date(2026, 1, 1), end=date(2026, 11, 30))
 
     rules = await CalendarDAO(db).find_active_rules(user["user"], *DECEMBER)
 
     assert sorted(r.name for r in rules) == [
+        "Accantonamento",
         "Finisce a inizio mese",
         "Inizia a fine mese",
         "Palestra",

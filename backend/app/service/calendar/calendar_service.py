@@ -1,6 +1,7 @@
 """Income/expense calendar (RF_CG_1).
 
-The calendar shows the recurring rules and the planned movements of a month. Occurrences of the
+The calendar shows the recurring rules (incomes, expenses and goal allocations) and the planned
+movements of a month. Occurrences of the
 recurring rules are computed on request (automatic projection on the future calendar), so nothing
 is written to the database.
 """
@@ -14,6 +15,8 @@ from app.api.dto.calendar.schema import CalendarDay, CalendarEntry, CalendarMont
 from app.dao.calendar.calendar_dao import CalendarDAO, CalendarPlanned, CalendarRule
 
 ZERO = Decimal("0.00")
+# Order of the entries of a day: incomes, expenses, then goal allocations.
+TYPE_ORDER = {"income": 0, "expense": 1, "saving": 2}
 FREQUENCIES = ("weekly", "monthly", "yearly")
 
 
@@ -87,13 +90,18 @@ def _planned_entry(planned: CalendarPlanned) -> CalendarEntry:
     )
 
 
+def _total(entries: list[CalendarEntry], entry_type: str) -> Decimal:
+    return sum((e.amount for e in entries if e.type == entry_type), ZERO)
+
+
 def _day(day: date, entries: list[CalendarEntry]) -> CalendarDay:
-    """Entries of a day in a stable order (incomes first, then by name), with the day totals."""
-    entries = sorted(entries, key=lambda e: (e.type != "income", e.name, e.source, e.source_id))
+    """Entries of a day (incomes, expenses, savings; then by name), with the day totals."""
+    entries = sorted(entries, key=lambda e: (TYPE_ORDER[e.type], e.name, e.source, e.source_id))
     return CalendarDay(
         date=day,
-        total_income=sum((e.amount for e in entries if e.type == "income"), ZERO),
-        total_expense=sum((e.amount for e in entries if e.type == "expense"), ZERO),
+        total_income=_total(entries, "income"),
+        total_expense=_total(entries, "expense"),
+        total_saving=_total(entries, "saving"),
         entries=entries,
     )
 
@@ -103,7 +111,7 @@ class CalendarService:
         self.dao = dao
 
     async def get_month(self, user_id: int, year: int, month: int) -> CalendarMonth:
-        """Recurring and planned incomes and expenses of the user in a month, grouped by day."""
+        """Recurring and planned movements of the user in a month, grouped by day."""
         start = date(year, month, 1)
         stop = date(year, month, monthrange(year, month)[1])
 
@@ -122,5 +130,6 @@ class CalendarService:
             month=f"{year:04d}-{month:02d}",
             total_income=sum((d.total_income for d in days), ZERO),
             total_expense=sum((d.total_expense for d in days), ZERO),
+            total_saving=sum((d.total_saving for d in days), ZERO),
             days=days,
         )

@@ -57,8 +57,8 @@ _category = table(
     column("name", String),
 )
 
-# Incomes and expenses only: `saving` rules are goal allocations planned by the system (SS5).
-RULE_TYPES = ("income", "expense")
+# Incomes, expenses and goal allocations (`saving` rules of SS5): RF_CG_1 shows all of them.
+RULE_TYPES = ("income", "expense", "saving")
 # Planned movements still to happen: `recorded` ones are already transactions, `cancelled` are void.
 PLANNED_STATUSES = ("planned", "pending_confirmation")
 
@@ -100,7 +100,7 @@ class CalendarDAO:
         self.db = db
 
     async def find_active_rules(self, user_id: int, start: date, stop: date) -> list[CalendarRule]:
-        """Active income/expense rules of the user that may fall between `start` and `stop`."""
+        """Active rules of the user (any type) that may fall between `start` and `stop`."""
         rule = _recurring_rule.c
         query = _select_with_category(
             _recurring_rule,

@@ -1,4 +1,5 @@
-"""Tests of the income/expense calendar (RF_CG_1): recurring rules and planned movements."""
+"""Tests of the income/expense calendar (RF_CG_1): recurring rules (incomes, expenses and
+goal allocations) and planned movements."""
 
 from calendar import monthrange
 from datetime import date
@@ -175,3 +176,36 @@ async def test_get_month_without_movements_is_empty():
     assert calendar.days == []
     assert calendar.total_income == Decimal("0.00")
     assert calendar.total_expense == Decimal("0.00")
+    assert calendar.total_saving == Decimal("0.00")
+
+
+async def test_get_month_shows_goal_allocations_after_incomes_and_expenses():
+    """RF_CG_1: the calendar also shows the goal allocations (`saving` rules of SS5)."""
+    dao = FakeCalendarDAO(
+        rules=[
+            rule(),
+            rule(
+                id_recurring_rule=2,
+                name="Accantonamento Vacanze",
+                type="saving",
+                amount=Decimal("100.00"),
+                id_category=9,
+                category_name="Risparmio",
+            ),
+        ],
+        planned=[
+            planned(
+                name="Rimborso",
+                type="income",
+                amount=Decimal("80.00"),
+                planned_date=date(2026, 12, 10),
+            )
+        ],
+    )
+    calendar = await CalendarService(dao).get_month(user_id=1, year=2026, month=12)
+
+    (day_10,) = calendar.days
+    assert [e.type for e in day_10.entries] == ["income", "expense", "saving"]
+    assert day_10.total_income == calendar.total_income == Decimal("80.00")
+    assert day_10.total_expense == calendar.total_expense == Decimal("50.00")
+    assert day_10.total_saving == calendar.total_saving == Decimal("100.00")

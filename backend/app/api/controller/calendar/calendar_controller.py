@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
+from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.calendar.schema import CalendarMonth
 from app.api.dto.common.response import APIResponse
 from app.core.dependencies import DbSession
@@ -22,24 +23,12 @@ def get_calendar_service(db: DbSession) -> CalendarService:
 Service = Annotated[CalendarService, Depends(get_calendar_service)]
 
 
-def get_current_user_id() -> int:
-    """TEMPORARY: fixed test user until the authentication module (profile) is merged.
-
-    When it arrives, replace only the body of this function with the real dependency
-    that returns the id of the authenticated user.
-    """
-    return 1
-
-
-CurrentUserId = Annotated[int, Depends(get_current_user_id)]
-
-
 @router.get("", response_model=APIResponse[CalendarMonth])
 async def get_calendar(
     service: Service,
-    user_id: CurrentUserId,
+    user: CurrentUser,
     month: Annotated[str, Query(pattern=MONTH_PATTERN, description="Month as YYYY-MM")],
 ):
-    """Recurring and planned incomes and expenses of the month, grouped by day."""
+    """Recurring and planned incomes, expenses and goal allocations of the month, by day."""
     year, month_number = (int(part) for part in month.split("-"))
-    return APIResponse.ok(await service.get_month(user_id, year, month_number))
+    return APIResponse.ok(await service.get_month(user.id_user, year, month_number))
