@@ -1,6 +1,6 @@
 """Validation rules of the transaction DTOs (no database needed)."""
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -8,13 +8,15 @@ from pydantic import ValidationError
 
 from app.api.dto.transaction.category_schema import CategoryCreate
 from app.api.dto.transaction.schema import TransactionCreate
+from app.service.profile import profile_service
+from app.service.profile.profile_service import today_rome
 
 
 def build(**overrides) -> TransactionCreate:
     data = {
         "type": "expense",
         "amount": "10.00",
-        "transaction_date": date.today(),
+        "transaction_date": today_rome(),
         "id_category": 1,
     }
     data.update(overrides)
@@ -39,12 +41,29 @@ def test_amount_with_two_decimals_is_valid():
 
 def test_future_date_is_rejected():
     with pytest.raises(ValidationError):
-        build(transaction_date=date.today() + timedelta(days=1))
+        build(transaction_date=today_rome() + timedelta(days=1))
 
 
 def test_today_and_past_dates_are_valid():
-    assert build(transaction_date=date.today()).transaction_date == date.today()
+    assert build(transaction_date=today_rome()).transaction_date == today_rome()
     assert build(transaction_date=date(2020, 1, 1)).transaction_date == date(2020, 1, 1)
+
+
+def test_rome_midnight_boundary_uses_europe_rome_not_utc(monkeypatch):
+    """Between 00:00 and 02:00 Europe/Rome, UTC is still the previous day (RNF_AF_7)."""
+
+    class FrozenDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            # 22:30 UTC in July is 00:30 of the next day in Europe/Rome (CEST, UTC+2).
+            utc_now = datetime(2026, 7, 15, 22, 30, tzinfo=UTC)
+            return utc_now.astimezone(tz) if tz else utc_now
+
+    monkeypatch.setattr(profile_service, "datetime", FrozenDateTime)
+
+    assert build(transaction_date=date(2026, 7, 16)).transaction_date == date(2026, 7, 16)
+    with pytest.raises(ValidationError):
+        build(transaction_date=date(2026, 7, 17))
 
 
 def test_invalid_type_is_rejected():
@@ -57,7 +76,7 @@ def test_required_fields(missing):
     data = {
         "type": "income",
         "amount": "5",
-        "transaction_date": date.today(),
+        "transaction_date": today_rome(),
         "id_category": 1,
     }
     del data[missing]

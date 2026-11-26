@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.service.profile.profile_service import today_rome
+
 TransactionType = Literal["income", "expense"]
 CategoryType = Literal["income", "expense", "both"]
 
@@ -22,7 +24,7 @@ class TransactionCreate(BaseModel):
     @field_validator("transaction_date")
     @classmethod
     def date_not_in_future(cls, value: date) -> date:
-        if value > date.today():
+        if value > today_rome():
             raise ValueError("La data non può essere futura")
         return value
 

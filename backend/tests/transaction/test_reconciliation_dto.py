@@ -7,10 +7,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.dto.transaction.reconciliation_schema import ReconciliationCreate
+from app.service.profile.profile_service import today_rome
 
 
 def build(**overrides) -> ReconciliationCreate:
-    data = {"real_balance": "100.00", "reconciliation_date": date.today()}
+    data = {"real_balance": "100.00", "reconciliation_date": today_rome()}
     data.update(overrides)
     return ReconciliationCreate(**data)
 
@@ -30,11 +31,11 @@ def test_invalid_real_balance(balance):
 
 def test_future_reconciliation_date_is_rejected():
     with pytest.raises(ValidationError):
-        build(reconciliation_date=date.today() + timedelta(days=1))
+        build(reconciliation_date=today_rome() + timedelta(days=1))
 
 
 def test_today_and_past_reconciliation_dates_are_valid():
-    assert build(reconciliation_date=date.today()).reconciliation_date == date.today()
+    assert build(reconciliation_date=today_rome()).reconciliation_date == today_rome()
     assert build(reconciliation_date=date(2020, 1, 1)).reconciliation_date == date(2020, 1, 1)
 
 

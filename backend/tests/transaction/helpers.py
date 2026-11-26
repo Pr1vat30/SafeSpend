@@ -1,7 +1,8 @@
 """Small helpers shared by the transaction tests."""
 
-from datetime import date, timedelta
+from datetime import timedelta
 
+from app.service.profile.profile_service import today_rome
 from app.service.profile.security import create_access_token
 
 
@@ -11,7 +12,7 @@ def headers(user: int) -> dict[str, str]:
 
 
 def days_ago(days: int) -> str:
-    return (date.today() - timedelta(days=days)).isoformat()
+    return (today_rome() - timedelta(days=days)).isoformat()
 
 
 def payload(category_id: int, **overrides) -> dict:
