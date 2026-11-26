@@ -122,7 +122,7 @@ async def test_find_active_rules_keeps_only_the_active_rules_of_the_period(db, u
     assert gym.category_name == "Salute e Fitness"
 
 
-async def test_find_planned_keeps_only_movements_still_to_happen_in_the_period(db, user):
+async def test_find_planned_keeps_the_movements_of_the_period_except_cancelled(db, user):
     await add_planned(db, user, "Dentista", planned_date=date(2026, 12, 20))
     await add_planned(db, user, "Primo del mese", planned_date=date(2026, 12, 1))
     await add_planned(db, user, "Ultimo del mese", planned_date=date(2026, 12, 31))
@@ -134,8 +134,8 @@ async def test_find_planned_keeps_only_movements_still_to_happen_in_the_period(d
         status="pending_confirmation",
         planned_date=date(2026, 12, 10),
     )
-    # Left out: already recorded, cancelled, outside the month.
     await add_planned(db, user, "Registrata", status="recorded", planned_date=date(2026, 12, 3))
+    # Left out: cancelled, outside the month.
     await add_planned(db, user, "Annullata", status="cancelled", planned_date=date(2026, 12, 4))
     await add_planned(db, user, "Novembre", planned_date=date(2026, 11, 30))
     await add_planned(db, user, "Gennaio", planned_date=date(2027, 1, 1))
@@ -145,6 +145,7 @@ async def test_find_planned_keeps_only_movements_still_to_happen_in_the_period(d
     assert sorted(p.name for p in planned) == [
         "Dentista",
         "Primo del mese",
+        "Registrata",
         "Rimborso da confermare",
         "Ultimo del mese",
     ]

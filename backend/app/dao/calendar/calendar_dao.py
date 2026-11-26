@@ -59,8 +59,10 @@ _category = table(
 
 # Incomes, expenses and goal allocations (`saving` rules of SS5): RF_CG_1 shows all of them.
 RULE_TYPES = ("income", "expense", "saving")
-# Planned movements still to happen: `recorded` ones are already transactions, `cancelled` are void.
-PLANNED_STATUSES = ("planned", "pending_confirmation")
+# Every planned movement of the month except the `cancelled` ones: like the occurrences of the
+# recurring rules, `recorded` movements stay on their day (the calendar does not read transactions,
+# so nothing is shown twice).
+PLANNED_STATUSES = ("planned", "pending_confirmation", "recorded")
 
 
 @dataclass(frozen=True)
@@ -124,7 +126,7 @@ class CalendarDAO:
         return [CalendarRule(**row) for row in result.mappings()]
 
     async def find_planned(self, user_id: int, start: date, stop: date) -> list[CalendarPlanned]:
-        """Planned movements of the user between `start` and `stop` that are still to happen."""
+        """Planned movements of the user between `start` and `stop`, except the cancelled ones."""
         planned = _planned_transaction.c
         query = _select_with_category(
             _planned_transaction,
