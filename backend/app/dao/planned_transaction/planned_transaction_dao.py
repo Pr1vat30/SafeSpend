@@ -1,7 +1,4 @@
-"""Data access for planned transactions.
-
-Queries only: `flush`/commit are handled by the unit of work.
-"""
+"""Data access for planned transactions. Queries only: `flush()`, never `commit()`."""
 
 from datetime import date
 
@@ -80,9 +77,27 @@ class PlannedTransactionDAO:
         return row.scalar_one_or_none()
 
     async def confirm_income(self, planned: PlannedTransactionModel) -> PlannedTransactionModel:
-        """Confirm a pending income: mark as recorded. Idempotent."""
-        if planned.status != "pending_confirmation":
-            return planned
+        """Confirm a pending income: register it as a real transaction and mark it recorded.
+
+        The transaction takes the planned date, like the expenses registered by the Scheduler.
+        `ON CONFLICT DO NOTHING` (unique `id_planned_transaction`) makes it idempotent.
+        """
+        await self.db.execute(
+            text(
+                'INSERT INTO "transaction" (id_user, id_category, id_planned_transaction, '
+                "  description, type, amount, transaction_date, origin) "
+                "VALUES (:uid, :cid, :pid, :descr, 'income', :amount, :tdate, 'planned') "
+                "ON CONFLICT (id_planned_transaction) DO NOTHING"
+            ),
+            {
+                "uid": planned.id_user,
+                "cid": planned.id_category,
+                "pid": planned.id_planned_transaction,
+                "descr": planned.description or planned.name,
+                "amount": planned.amount,
+                "tdate": planned.planned_date,
+            },
+        )
         planned.status = "recorded"
         return await self.save(planned)
 

@@ -1,5 +1,6 @@
 """Routes of the planned transactions (RF_CF_6). Controllers hold no business logic."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -7,10 +8,12 @@ from fastapi import APIRouter, Depends, Query, status
 from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.common.response import APIResponse
 from app.api.dto.planned_transaction.schema import (
+    PlannedStatus,
     PlannedTransactionConfirm,
     PlannedTransactionCreate,
     PlannedTransactionRead,
     PlannedTransactionUpdate,
+    PlannedType,
 )
 from app.core.dependencies import DbSession
 from app.dao.planned_transaction.planned_transaction_dao import PlannedTransactionDAO
@@ -38,12 +41,15 @@ async def create_planned(body: PlannedTransactionCreate, user: CurrentUser, serv
 async def list_planned(
     user: CurrentUser,
     service: Service,
-    status: Annotated[str | None, Query()] = None,
-    type: Annotated[str | None, Query()] = None,
-    date_from: Annotated[str | None, Query(alias="dateFrom")] = None,
-    date_to: Annotated[str | None, Query(alias="dateTo")] = None,
+    planned_status: Annotated[PlannedStatus | None, Query(alias="status")] = None,
+    planned_type: Annotated[PlannedType | None, Query(alias="type")] = None,
+    date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
+    date_to: Annotated[date | None, Query(alias="dateTo")] = None,
 ):
-    planned_list = await service.list_transactions(user.id_user, status, type, date_from, date_to)
+    """Filters are optional; dates use the ISO format (2026-12-31)."""
+    planned_list = await service.list_transactions(
+        user.id_user, planned_status, planned_type, date_from, date_to
+    )
     return APIResponse.ok(planned_list)
 
 
@@ -79,7 +85,7 @@ async def confirm_or_reject_income(
 
 @router.post("/{planned_id}/cancel", response_model=APIResponse[PlannedTransactionRead])
 async def cancel_planned(planned_id: int, user: CurrentUser, service: Service):
-    """Cancel a planned transaction (expense or income) before its date."""
+    """Cancel a transaction that is still planned (before its date)."""
     planned = await service.cancel(user.id_user, planned_id)
     return APIResponse.ok(planned)
 

@@ -35,8 +35,7 @@ class PlannedTransactionUpdate(BaseModel):
     amount: Money | None = None
     id_category: int | None = None
     planned_date: date | None = None
-    description: PlannedDescription = None
-    origin: PlannedOrigin | None = None
+    description: PlannedDescription = None  # explicit null removes the description
 
     @model_validator(mode="after")
     def _required_fields_not_null(self):
