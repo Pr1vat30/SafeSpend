@@ -111,8 +111,15 @@ class CashFlowDAO:
             SELECT id_planned_transaction, name, type, amount, planned_date
             FROM planned_transaction
             WHERE id_user = :id_user
-              AND status = 'planned'
-              AND planned_date BETWEEN :start_date AND :end_date
+                AND planned_date BETWEEN :start_date AND :end_date
+                AND (
+                    status = 'planned'
+                    OR (
+                        type = 'income'
+                        AND status = 'pending_confirmation'
+                        AND planned_date = :start_date
+                    )
+                )
             ORDER BY planned_date, id_planned_transaction
         """)
 
