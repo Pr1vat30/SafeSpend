@@ -16,6 +16,12 @@ class ProjectionSettings:
 
 
 @dataclass(frozen=True)
+class ReconciledBalance:
+    amount: Decimal
+    reconciliation_date: date
+
+
+@dataclass(frozen=True)
 class PlannedMovement:
     id_planned_transaction: int
     name: str
@@ -153,3 +159,24 @@ class CashFlowDAO:
             {"id_user": id_user, "start_date": start_date, "end_date": end_date},
         )
         return [PlannedMovement(**row) for row in result.mappings()]
+
+    async def get_reconciled_balance(self, id_user: int, as_of: date) -> ReconciledBalance | None:
+        query = text("""
+            SELECT real_balance, reconciliation_date
+            FROM balance_snapshot
+            WHERE id_user = :id_user
+              AND reconciliation_date <= :as_of
+            ORDER BY reconciliation_date DESC, created_at DESC, id_snapshot DESC
+            LIMIT 1
+        """)
+
+        result = await self.db.execute(query, {"id_user": id_user, "as_of": as_of})
+        row = result.mappings().one_or_none()
+
+        if row is None:
+            return None
+
+        return ReconciledBalance(
+            amount=row["real_balance"],
+            reconciliation_date=row["reconciliation_date"],
+        )

@@ -1,15 +1,24 @@
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from app.api.dto.cashflow.schema import DailyBalanceRead, ProjectionRead
-from app.core.exceptions import AppException, ConflictError
+from app.core.exceptions import ConflictError
 from app.dao.cashflow.cashflow_dao import CashFlowDAO, PlannedMovement
 from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 from app.service.cashflow.forecast_engine import ForecastEngine
 from app.service.cashflow.forecast_strategy import Percentile75Strategy
 from app.service.cashflow.recurrences import expand_occurrences
+
+
+@dataclass
+class CashFlowResult:
+    projection: ProjectionRead
+    safety_buffer: Decimal
+    planned_movements: list[PlannedMovement]
+    recurring_rules: list[RecurringRuleModel]
 
 
 class CashFlowService:
@@ -19,14 +28,14 @@ class CashFlowService:
             forecast_engine = ForecastEngine(dao, Percentile75Strategy())
         self.forecast_engine = forecast_engine
 
-    async def calculate_cash_flow(
+    async def calculate_cash_flow_result(
         self,
         id_user: int,
         as_of: date,
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
         last_installment_date: date | None = None,
-    ) -> ProjectionRead:
+    ) -> CashFlowResult:
         settings = await self.dao.get_projection_settings(id_user)
         if settings is None:
             raise ConflictError("Completa il profilo finanziario per calcolare la proiezione.")
@@ -38,13 +47,6 @@ class CashFlowService:
         end_date = as_of + timedelta(days=settings.horizon_days - 1)
 
         if last_installment_date is not None:
-            limit_year = as_of.year + 2
-            limit_day = min(as_of.day, monthrange(limit_year, as_of.month)[1])
-            latest_allowed = date(limit_year, as_of.month, limit_day)
-
-            if last_installment_date > latest_allowed:
-                raise AppException("L'ultima rata supera il limite di 24 mesi.")
-
             end_date = max(end_date, last_installment_date)
 
         horizon_days = (end_date - as_of).days + 1
@@ -84,7 +86,12 @@ class CashFlowService:
             daily_balances, settings.safety_buffer, next_income_date
         )
         projection.variable_expense_estimate_missing = estimate_missing
-        return projection
+        return CashFlowResult(
+            projection=projection,
+            safety_buffer=settings.safety_buffer,
+            planned_movements=planned_movements,
+            recurring_rules=recurring_rules,
+        )
 
     @staticmethod
     def classify_risk(
@@ -158,7 +165,7 @@ class CashFlowService:
         next_income_date: date | None,
     ) -> ProjectionRead:
         minimum_day = min(daily_balances, key=lambda day: (day.balance, day.date))
-        safe_to_spend = max(Decimal("0.00"), minimum_day.balance - safety_buffer)
+        safe_to_spend = self.calculate_sts(minimum_day.balance, safety_buffer)
 
         days = len(daily_balances)
         if next_income_date is not None:
@@ -221,3 +228,23 @@ class CashFlowService:
             estimates[day] = Decimal(daily_cents).scaleb(-2)
 
         return estimates
+
+    @staticmethod
+    def calculate_sts(minimum_balance: Decimal, safety_buffer: Decimal) -> Decimal:
+        return max(Decimal("0.00"), minimum_balance - safety_buffer)
+
+    async def calculate_cash_flow(
+        self,
+        id_user: int,
+        as_of: date,
+        *,
+        forecast_expenses: dict[date, Decimal] | None = None,
+        last_installment_date: date | None = None,
+    ) -> ProjectionRead:
+        result = await self.calculate_cash_flow_result(
+            id_user,
+            as_of,
+            forecast_expenses=forecast_expenses,
+            last_installment_date=last_installment_date,
+        )
+        return result.projection
