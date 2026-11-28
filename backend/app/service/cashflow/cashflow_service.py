@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from app.api.dto.cashflow.schema import DailyBalanceRead, ProjectionRead
-from app.core.exceptions import ConflictError
+from app.core.exceptions import AppException, ConflictError
 from app.dao.cashflow.cashflow_dao import CashFlowDAO, PlannedMovement
 from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 from app.service.cashflow.forecast_engine import ForecastEngine
@@ -47,6 +47,13 @@ class CashFlowService:
         end_date = as_of + timedelta(days=settings.horizon_days - 1)
 
         if last_installment_date is not None:
+            limit_year = as_of.year + 2
+            limit_day = min(as_of.day, monthrange(limit_year, as_of.month)[1])
+            latest_allowed = date(limit_year, as_of.month, limit_day)
+
+            if last_installment_date > latest_allowed:
+                raise AppException("L'ultima rata supera il limite di 24 mesi.")
+
             end_date = max(end_date, last_installment_date)
 
         horizon_days = (end_date - as_of).days + 1
