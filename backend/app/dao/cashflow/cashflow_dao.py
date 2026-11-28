@@ -1,9 +1,11 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import or_, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 
@@ -27,6 +29,20 @@ class PlannedMovement:
 class CashFlowDAO:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @asynccontextmanager
+    async def projection_reader(self) -> AsyncIterator["CashFlowDAO"]:
+        """Legge una proiezione da una fotografia coerente dei dati confermati."""
+        bind = self.db.bind
+        if bind is None:
+            raise RuntimeError("La sessione del cashflow non è associata a un database.")
+
+        engine = bind.engine if isinstance(bind, AsyncConnection) else bind
+        read_engine = engine.execution_options(isolation_level="REPEATABLE READ")
+
+        async with AsyncSession(read_engine, expire_on_commit=False) as session:
+            async with session.begin():
+                yield CashFlowDAO(session)
 
     async def get_starting_balance(self, id_user: int, as_of: date) -> Decimal | None:
         query = text("""

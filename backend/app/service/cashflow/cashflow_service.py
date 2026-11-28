@@ -21,23 +21,23 @@ class CashFlowService:
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
     ) -> ProjectionRead:
-        settings = await self.dao.get_projection_settings(id_user)
-        if settings is None:
-            raise ConflictError("Completa il profilo finanziario per calcolare la proiezione.")
+        async with self.dao.projection_reader() as reader:
+            settings = await reader.get_projection_settings(id_user)
+            if settings is None:
+                raise ConflictError("Completa il profilo finanziario per calcolare la proiezione.")
 
-        starting_balance = await self.dao.get_starting_balance(id_user, as_of)
-        if starting_balance is None:
-            raise ConflictError("Inserisci il saldo iniziale per calcolare la proiezione.")
+            starting_balance = await reader.get_starting_balance(id_user, as_of)
+            if starting_balance is None:
+                raise ConflictError("Inserisci il saldo iniziale per calcolare la proiezione.")
 
-        end_date = as_of + timedelta(days=settings.horizon_days - 1)
+            end_date = as_of + timedelta(days=settings.horizon_days - 1)
+            planned_movements = await reader.get_planned_transactions(id_user, as_of, end_date)
+            recurring_rules = await reader.get_recurring_rules(id_user, as_of, end_date)
+            income_rules = await reader.get_income_rules(id_user, as_of)
 
-        planned_movements = await self.dao.get_planned_transactions(id_user, as_of, end_date)
-        recurring_rules = await self.dao.get_recurring_rules(id_user, as_of, end_date)
         daily_changes = self.build_daily_changes(
             planned_movements, recurring_rules, as_of, end_date
         )
-
-        income_rules = await self.dao.get_income_rules(id_user, as_of)
         next_income_date = self.get_next_income_date(income_rules, as_of)
 
         monthly_estimate = settings.estimated_variable_expenses
