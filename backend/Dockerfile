@@ -11,6 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-ita poppler-utils && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first so this layer is cached across code changes
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev

@@ -94,6 +94,8 @@ jobs:
         run: uv run ruff check .
       - name: Formattazione (ruff format)
         run: uv run ruff format --check .
+      - name: Installa Tesseract e Poppler
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-ita poppler-utils
       - name: Test (pytest)
         run: uv run pytest
 
