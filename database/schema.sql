@@ -200,6 +200,18 @@ CREATE TABLE IF NOT EXISTS alert (
                        CONSTRAINT chk_alert_resolution CHECK ((status = 'resolved') = (resolved_at IS NOT NULL))
 );
 
+-- Daily STS of the last days, used only to detect a drop of more than 30% compared with the
+-- previous day (RF_CG_3, condition c). Written by the alert checks, kept for one week.
+CREATE TABLE IF NOT EXISTS daily_sts (
+                           id_user BIGINT NOT NULL,
+                           sts_date DATE NOT NULL,
+                           daily_sts NUMERIC(12,2) NOT NULL,
+
+                           CONSTRAINT pk_daily_sts PRIMARY KEY (id_user, sts_date),
+                           CONSTRAINT fk_daily_sts_user FOREIGN KEY (id_user) REFERENCES _user ON DELETE CASCADE,
+                           CONSTRAINT chk_daily_sts_value CHECK (daily_sts >= 0 AND daily_sts <> 'NaN'::numeric)
+);
+
 CREATE TABLE IF NOT EXISTS achievement (
                              id_achievement BIGINT GENERATED ALWAYS AS IDENTITY,
                              name VARCHAR(100) NOT NULL,
