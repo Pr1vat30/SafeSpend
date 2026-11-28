@@ -2,12 +2,14 @@
 
 from fastapi import APIRouter
 
+from app.api.controller.alert import alert_controller
 from app.api.controller.health.health_controller import router as health_router
 from app.api.controller.planned_transaction import planned_transaction_controller
 from app.api.controller.profile.router import router as profile_router
 from app.api.controller.recurring_rule import recurring_rule_controller
 
 api_router = APIRouter()
+api_router.include_router(alert_controller.router)
 api_router.include_router(health_router)
 api_router.include_router(planned_transaction_controller.router)
 api_router.include_router(profile_router)
