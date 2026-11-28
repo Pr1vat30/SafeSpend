@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.common.response import APIResponse
@@ -18,6 +18,7 @@ from app.api.dto.planned_transaction.schema import (
 )
 from app.core.dependencies import DbSession
 from app.dao.planned_transaction.planned_transaction_dao import PlannedTransactionDAO
+from app.service.alert.alert_job import refresh_user_alerts
 from app.service.planned_transaction.planned_transaction_service import PlannedTransactionService
 
 router = APIRouter(prefix="/planned-transactions", tags=["Planned transactions"])
@@ -33,8 +34,11 @@ Service = Annotated[PlannedTransactionService, Depends(get_planned_transaction_s
 @router.post(
     "", response_model=APIResponse[PlannedTransactionRead], status_code=status.HTTP_201_CREATED
 )
-async def create_planned(body: PlannedTransactionCreate, user: CurrentUser, service: Service):
+async def create_planned(
+    body: PlannedTransactionCreate, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     planned = await service.create(user.id_user, body)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(planned)
 
 
@@ -73,8 +77,10 @@ async def update_planned(
     body: PlannedTransactionUpdate,
     user: CurrentUser,
     service: Service,
+    background: BackgroundTasks,
 ):
     planned = await service.update(user.id_user, planned_id, body)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(planned)
 
 
@@ -84,9 +90,11 @@ async def confirm_or_reject_income(
     body: PlannedTransactionConfirm,
     user: CurrentUser,
     service: Service,
+    background: BackgroundTasks,
 ):
     """Confirm (confirm=true) or reject (confirm=false) a pending income."""
     planned = await service.confirm_or_reject_income(user.id_user, planned_id, body.confirm)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(planned)
 
 
@@ -96,20 +104,28 @@ async def postpone_income(
     body: PlannedTransactionPostpone,
     user: CurrentUser,
     service: Service,
+    background: BackgroundTasks,
 ):
     """Move a pending income to a new date ("Conferma l'incasso o sposta la data")."""
     planned = await service.postpone_income(user.id_user, planned_id, body.new_date)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(planned)
 
 
 @router.post("/{planned_id}/cancel", response_model=APIResponse[PlannedTransactionRead])
-async def cancel_planned(planned_id: int, user: CurrentUser, service: Service):
+async def cancel_planned(
+    planned_id: int, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     """Cancel a transaction that is still planned (before its date)."""
     planned = await service.cancel(user.id_user, planned_id)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(planned)
 
 
 @router.delete("/{planned_id}", response_model=APIResponse[None])
-async def delete_planned(planned_id: int, user: CurrentUser, service: Service):
+async def delete_planned(
+    planned_id: int, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     await service.delete(user.id_user, planned_id)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(None)

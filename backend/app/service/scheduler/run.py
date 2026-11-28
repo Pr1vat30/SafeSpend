@@ -29,14 +29,21 @@ def seconds_until_next_run(now: datetime, run_at: time = RUN_AT) -> float:
     return (target - now).total_seconds()
 
 
-async def _run(loop_forever: bool) -> None:
+async def _daily_cycle() -> None:
+    """Register the due movements first, then check the alerts on the updated data (RF_CG_3)."""
+    from app.service.alert.alert_job import run_alert_checks
     from app.service.scheduler.unit_of_work import database_unit_of_work
 
-    await run_daily(database_unit_of_work)
+    report = await run_daily(database_unit_of_work)
+    await run_alert_checks(report.day)
+
+
+async def _run(loop_forever: bool) -> None:
+    await _daily_cycle()
     while loop_forever:
         await asyncio.sleep(seconds_until_next_run(datetime.now(ROME)))
         try:
-            await run_daily(database_unit_of_work)
+            await _daily_cycle()
         except Exception:
             logger.exception("Scheduler: ciclo fallito, riprovo il giorno dopo")
 

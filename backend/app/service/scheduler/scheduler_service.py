@@ -33,6 +33,7 @@ def rome_today() -> date:
 
 @dataclass
 class SchedulerReport:
+    day: date | None = None
     rules_checked: int = 0
     occurrences_created: int = 0
     rules_terminated: int = 0
@@ -66,7 +67,7 @@ async def process_rule(dao: SchedulerDAO, rule: RuleRow, today: date) -> tuple[i
 async def run_daily(unit_of_work: UnitOfWork, today: date | None = None) -> SchedulerReport:
     """One full pass of the Scheduler. Safe to run more than once a day (idempotent)."""
     today = today or rome_today()
-    report = SchedulerReport()
+    report = SchedulerReport(day=today)
 
     async with unit_of_work() as dao:
         rules = await dao.list_active_rules()

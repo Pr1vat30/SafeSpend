@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.common.response import APIResponse
@@ -14,6 +14,7 @@ from app.api.dto.recurring_rule.schema import (
 )
 from app.core.dependencies import DbSession
 from app.dao.recurring_rule.recurring_rule_dao import RecurringRuleDAO
+from app.service.alert.alert_job import refresh_user_alerts
 from app.service.recurring_rule.recurring_rule_service import RecurringRuleService
 
 router = APIRouter(prefix="/recurring-rules", tags=["Recurring rules"])
@@ -27,8 +28,11 @@ Service = Annotated[RecurringRuleService, Depends(get_recurring_rule_service)]
 
 
 @router.post("", response_model=APIResponse[RecurringRuleRead], status_code=status.HTTP_201_CREATED)
-async def create_rule(body: RecurringRuleCreate, user: CurrentUser, service: Service):
+async def create_rule(
+    body: RecurringRuleCreate, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     rule = await service.create(user.id_user, body)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(RecurringRuleRead.model_validate(rule))
 
 
@@ -54,24 +58,35 @@ async def update_rule(
     body: RecurringRuleUpdate,
     user: CurrentUser,
     service: Service,
+    background: BackgroundTasks,
 ):
     rule = await service.update(user.id_user, rule_id, body)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(RecurringRuleRead.model_validate(rule))
 
 
 @router.post("/{rule_id}/suspend", response_model=APIResponse[RecurringRuleRead])
-async def suspend_rule(rule_id: int, user: CurrentUser, service: Service):
+async def suspend_rule(
+    rule_id: int, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     rule = await service.suspend(user.id_user, rule_id)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(RecurringRuleRead.model_validate(rule))
 
 
 @router.post("/{rule_id}/resume", response_model=APIResponse[RecurringRuleRead])
-async def resume_rule(rule_id: int, user: CurrentUser, service: Service):
+async def resume_rule(
+    rule_id: int, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     rule = await service.resume(user.id_user, rule_id)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(RecurringRuleRead.model_validate(rule))
 
 
 @router.delete("/{rule_id}", response_model=APIResponse[None])
-async def delete_rule(rule_id: int, user: CurrentUser, service: Service):
+async def delete_rule(
+    rule_id: int, user: CurrentUser, service: Service, background: BackgroundTasks
+):
     await service.delete(user.id_user, rule_id)
+    background.add_task(refresh_user_alerts, user.id_user)  # RF_CG_3
     return APIResponse.ok(None)

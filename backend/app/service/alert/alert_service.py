@@ -5,8 +5,8 @@
 
 At most one open (active or read) alert per user and type: when the condition is detected
 again, the open alert is updated instead of creating a duplicate. Detecting the conditions
-(risk level, impending expenses, STS drop) is a separate step; this service only stores
-the result.
+(risk level, impending expenses, STS drop) is done by `alert_rules.py` with the Cash Flow
+Engine; this service only stores the result.
 
 Raises exceptions from `app.core.exceptions`, never `HTTPException`.
 """
