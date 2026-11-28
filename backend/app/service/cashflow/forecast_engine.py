@@ -11,9 +11,15 @@ class ForecastEngine:
         self.strategy = strategy
 
     async def forecast_daily_expenses(
-        self, id_user: int, as_of: date, horizon_days: int
+        self,
+        id_user: int,
+        as_of: date,
+        horizon_days: int,
+        *,
+        reader: CashFlowDAO | None = None,
     ) -> dict[date, Decimal] | None:
-        first_date = await self.dao.get_first_reconciliation_date(id_user, as_of)
+        dao = self.dao if reader is None else reader
+        first_date = await dao.get_first_reconciliation_date(id_user, as_of)
         if first_date is None:
             return None
 
@@ -22,7 +28,7 @@ class ForecastEngine:
         if observed_days < 30:
             return None
 
-        totals = await self.dao.get_daily_variable_expenses(id_user, start_date, as_of)
+        totals = await dao.get_daily_variable_expenses(id_user, start_date, as_of)
         history_dates = [start_date + timedelta(days=i) for i in range(observed_days)]
         category_ids = {category_id for _, category_id in totals}
 

@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
@@ -13,5 +14,6 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 @router.get("", response_model=APIResponse[DashboardRead])
 async def get_dashboard(user: CurrentUser, service: DashboardServiceDep):
     """Restituisce la dashboard finanziaria dell'utente autenticato (RF_CG_2)."""
-    dashboard = await service.get_dashboard(id_user=user.id_user, as_of=date.today())
+    today = datetime.now(ZoneInfo("Europe/Rome")).date()
+    dashboard = await service.get_dashboard(id_user=user.id_user, as_of=today)
     return APIResponse.ok(dashboard)

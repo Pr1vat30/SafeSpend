@@ -1,4 +1,5 @@
 from calendar import monthrange
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -11,6 +12,30 @@ from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 from app.service.cashflow.forecast_engine import ForecastEngine
 from app.service.cashflow.forecast_strategy import Percentile75Strategy
 from app.service.cashflow.recurrences import expand_occurrences
+
+
+@dataclass(frozen=True)
+class HypotheticalExpense:
+    expense_date: date
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class HypotheticalRecurringRule:
+    type: Literal["income", "expense", "saving"]
+    amount: Decimal
+    frequency: Literal["weekly", "monthly", "yearly"]
+    first_occurrence_date: date
+    end_date: date | None = None
+
+
+@dataclass(frozen=True)
+class RecurringAmountChange:
+    id_recurring_rule: int
+    new_amount: Decimal
+
+
+CashFlowScenario = HypotheticalExpense | HypotheticalRecurringRule | RecurringAmountChange
 
 
 @dataclass
@@ -35,44 +60,82 @@ class CashFlowService:
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
         last_installment_date: date | None = None,
+        scenario: CashFlowScenario | None = None,
+        reader: CashFlowDAO | None = None,
     ) -> CashFlowResult:
-        settings = await self.dao.get_projection_settings(id_user)
-        if settings is None:
-            raise ConflictError("Completa il profilo finanziario per calcolare la proiezione.")
+        context = self.dao.projection_reader() if reader is None else nullcontext(reader)
+        async with context as snapshot:
+            settings = await snapshot.get_projection_settings(id_user)
+            if settings is None:
+                raise ConflictError("Completa il profilo finanziario per calcolare la proiezione.")
 
-        starting_balance = await self.dao.get_starting_balance(id_user, as_of)
-        if starting_balance is None:
-            raise ConflictError("Inserisci il saldo iniziale per calcolare la proiezione.")
+            starting_balance = await snapshot.get_starting_balance(id_user, as_of)
+            if starting_balance is None:
+                raise ConflictError("Inserisci il saldo iniziale per calcolare la proiezione.")
 
-        end_date = as_of + timedelta(days=settings.horizon_days - 1)
+            end_date = as_of + timedelta(days=settings.horizon_days - 1)
 
-        if last_installment_date is not None:
-            limit_year = as_of.year + 2
-            limit_day = min(as_of.day, monthrange(limit_year, as_of.month)[1])
-            latest_allowed = date(limit_year, as_of.month, limit_day)
+            if last_installment_date is not None:
+                limit_year = as_of.year + 2
+                limit_day = min(as_of.day, monthrange(limit_year, as_of.month)[1])
+                latest_allowed = date(limit_year, as_of.month, limit_day)
 
-            if last_installment_date > latest_allowed:
-                raise AppException("L'ultima rata supera il limite di 24 mesi.")
+                if last_installment_date > latest_allowed:
+                    raise AppException("L'ultima rata supera il limite di 24 mesi.")
 
-            end_date = max(end_date, last_installment_date)
+                end_date = max(end_date, last_installment_date)
 
-        horizon_days = (end_date - as_of).days + 1
+            horizon_days = (end_date - as_of).days + 1
 
-        planned_movements = await self.dao.get_planned_transactions(id_user, as_of, end_date)
-        recurring_rules = await self.dao.get_recurring_rules(id_user, as_of, end_date)
-        daily_changes = self.build_daily_changes(
-            planned_movements, recurring_rules, as_of, end_date
-        )
+            planned_movements = await snapshot.get_planned_transactions(id_user, as_of, end_date)
+            recurring_rules = await snapshot.get_recurring_rules(id_user, as_of, end_date)
+            income_rules = await snapshot.get_income_rules(id_user, as_of)
 
-        income_rules = await self.dao.get_income_rules(id_user, as_of)
-        next_income_date = self.get_next_income_date(income_rules, as_of)
+            if forecast_expenses is None:
+                forecast_expenses = await self.forecast_engine.forecast_daily_expenses(
+                    reader=snapshot,
+                    id_user=id_user,
+                    as_of=as_of,
+                    horizon_days=horizon_days,
+                )
 
-        if forecast_expenses is None:
-            forecast_expenses = await self.forecast_engine.forecast_daily_expenses(
-                id_user=id_user,
-                as_of=as_of,
-                horizon_days=horizon_days,
+        amount_change = None
+        if isinstance(scenario, RecurringAmountChange):
+            if not scenario.new_amount.is_finite() or scenario.new_amount <= 0:
+                raise ValueError("Il nuovo importo della ricorrenza deve essere positivo.")
+            amount_change = scenario
+        elif isinstance(scenario, HypotheticalRecurringRule):
+            if not scenario.amount.is_finite() or scenario.amount <= 0:
+                raise ValueError("L'importo della ricorrenza deve essere positivo.")
+            if scenario.end_date is not None and scenario.end_date < scenario.first_occurrence_date:
+                raise ValueError("La data di fine precede la prima occorrenza.")
+
+            proposed_rule = RecurringRuleModel(
+                type=scenario.type,
+                amount=scenario.amount,
+                frequency=scenario.frequency,
+                first_occurrence_date=scenario.first_occurrence_date,
+                end_date=scenario.end_date,
+                last_processed_occurrence_date=None,
+                status="active",
             )
+            recurring_rules = [*recurring_rules, proposed_rule]
+            if proposed_rule.type == "income":
+                income_rules = [*income_rules, proposed_rule]
+
+        daily_changes = self.build_daily_changes(
+            planned_movements, recurring_rules, as_of, end_date, amount_change=amount_change
+        )
+        if isinstance(scenario, HypotheticalExpense):
+            if not scenario.amount.is_finite() or scenario.amount <= 0:
+                raise ValueError("L'importo della spesa ipotetica deve essere positivo.")
+            if not as_of <= scenario.expense_date <= end_date:
+                raise ValueError("La data della spesa ipotetica deve rientrare nell'orizzonte.")
+
+            day = scenario.expense_date
+            daily_changes[day] = daily_changes.get(day, Decimal("0.00")) - scenario.amount
+
+        next_income_date = self.get_next_income_date(income_rules, as_of)
 
         monthly_estimate = settings.estimated_variable_expenses
         estimate_missing = forecast_expenses is None and monthly_estimate is None
@@ -135,6 +198,8 @@ class CashFlowService:
         recurring_rules: list[RecurringRuleModel],
         start_date: date,
         end_date: date,
+        *,
+        amount_change: RecurringAmountChange | None = None,
     ) -> dict[date, Decimal]:
         daily_changes: dict[date, Decimal] = {}
 
@@ -159,7 +224,14 @@ class CashFlowService:
                 end=rule.end_date,
             )
 
-            amount = rule.amount if rule.type == "income" else -rule.amount
+            amount = rule.amount
+            if (
+                amount_change is not None
+                and rule.id_recurring_rule == amount_change.id_recurring_rule
+            ):
+                amount = amount_change.new_amount
+            if rule.type != "income":
+                amount = -amount
             for day in dates:
                 daily_changes[day] = daily_changes.get(day, Decimal("0.00")) + amount
 
@@ -247,11 +319,13 @@ class CashFlowService:
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
         last_installment_date: date | None = None,
+        scenario: CashFlowScenario | None = None,
     ) -> ProjectionRead:
         result = await self.calculate_cash_flow_result(
             id_user,
             as_of,
             forecast_expenses=forecast_expenses,
             last_installment_date=last_installment_date,
+            scenario=scenario,
         )
         return result.projection

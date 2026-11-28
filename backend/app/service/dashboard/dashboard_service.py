@@ -18,13 +18,17 @@ class DashboardService:
         self.cashflow_service = CashFlowService(cashflow_dao)
 
     async def get_dashboard(self, id_user: int, as_of: date) -> DashboardRead:
-        reconciled = await self.cashflow_dao.get_reconciled_balance(id_user, as_of)
-        if reconciled is None:
-            raise ConflictError("Inserisci il saldo iniziale per visualizzare la dashboard.")
+        async with self.cashflow_dao.projection_reader() as reader:
+            reconciled = await reader.get_reconciled_balance(id_user, as_of)
+            if reconciled is None:
+                raise ConflictError("Inserisci il saldo iniziale per visualizzare la dashboard.")
 
-        result = await self.cashflow_service.calculate_cash_flow_result(id_user, as_of)
+            result = await self.cashflow_service.calculate_cash_flow_result(
+                id_user, as_of, reader=reader
+            )
+            alert_rows = await self.dashboard_dao.get_visible_alerts(id_user, session=reader.db)
+
         end_date = result.projection.daily_balances[-1].date
-        alert_rows = await self.dashboard_dao.get_visible_alerts(id_user)
 
         return DashboardRead(
             reconciled_balance=reconciled.amount,
