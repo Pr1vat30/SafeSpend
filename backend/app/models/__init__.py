@@ -2,5 +2,6 @@
 
 from app.models.common.base import Base
 from app.models.profile.profile_model import FinancialProfile, User  # noqa: F401
+from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 
-__all__ = ["Base"]
+__all__ = ["Base", "RecurringRuleModel"]
