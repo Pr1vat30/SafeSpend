@@ -1,4 +1,5 @@
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
@@ -8,6 +9,30 @@ from app.core.exceptions import ConflictError
 from app.dao.cashflow.cashflow_dao import CashFlowDAO, PlannedMovement
 from app.models.recurring_rule.recurring_rule_model import RecurringRuleModel
 from app.service.cashflow.recurrences import expand_occurrences
+
+
+@dataclass(frozen=True)
+class HypotheticalExpense:
+    expense_date: date
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class HypotheticalRecurringRule:
+    type: Literal["income", "expense", "saving"]
+    amount: Decimal
+    frequency: Literal["weekly", "monthly", "yearly"]
+    first_occurrence_date: date
+    end_date: date | None = None
+
+
+@dataclass(frozen=True)
+class RecurringAmountChange:
+    id_recurring_rule: int
+    new_amount: Decimal
+
+
+CashFlowScenario = HypotheticalExpense | HypotheticalRecurringRule | RecurringAmountChange
 
 
 class CashFlowService:
@@ -20,6 +45,7 @@ class CashFlowService:
         as_of: date,
         *,
         forecast_expenses: dict[date, Decimal] | None = None,
+        scenario: CashFlowScenario | None = None,
     ) -> ProjectionRead:
         async with self.dao.projection_reader() as reader:
             settings = await reader.get_projection_settings(id_user)
@@ -35,9 +61,42 @@ class CashFlowService:
             recurring_rules = await reader.get_recurring_rules(id_user, as_of, end_date)
             income_rules = await reader.get_income_rules(id_user, as_of)
 
+        amount_change = None
+        if isinstance(scenario, RecurringAmountChange):
+            if not scenario.new_amount.is_finite() or scenario.new_amount <= 0:
+                raise ValueError("Il nuovo importo della ricorrenza deve essere positivo.")
+            amount_change = scenario
+        elif isinstance(scenario, HypotheticalRecurringRule):
+            if not scenario.amount.is_finite() or scenario.amount <= 0:
+                raise ValueError("L'importo della ricorrenza deve essere positivo.")
+            if scenario.end_date is not None and scenario.end_date < scenario.first_occurrence_date:
+                raise ValueError("La data di fine precede la prima occorrenza.")
+
+            proposed_rule = RecurringRuleModel(
+                type=scenario.type,
+                amount=scenario.amount,
+                frequency=scenario.frequency,
+                first_occurrence_date=scenario.first_occurrence_date,
+                end_date=scenario.end_date,
+                last_processed_occurrence_date=None,
+                status="active",
+            )
+            recurring_rules = [*recurring_rules, proposed_rule]
+            if proposed_rule.type == "income":
+                income_rules = [*income_rules, proposed_rule]
+
         daily_changes = self.build_daily_changes(
-            planned_movements, recurring_rules, as_of, end_date
+            planned_movements, recurring_rules, as_of, end_date, amount_change=amount_change
         )
+        if isinstance(scenario, HypotheticalExpense):
+            if not scenario.amount.is_finite() or scenario.amount <= 0:
+                raise ValueError("L'importo della spesa ipotetica deve essere positivo.")
+            if not as_of <= scenario.expense_date <= end_date:
+                raise ValueError("La data della spesa ipotetica deve rientrare nell'orizzonte.")
+
+            day = scenario.expense_date
+            daily_changes[day] = daily_changes.get(day, Decimal("0.00")) - scenario.amount
+
         next_income_date = self.get_next_income_date(income_rules, as_of)
 
         monthly_estimate = settings.estimated_variable_expenses
@@ -96,6 +155,8 @@ class CashFlowService:
         recurring_rules: list[RecurringRuleModel],
         start_date: date,
         end_date: date,
+        *,
+        amount_change: RecurringAmountChange | None = None,
     ) -> dict[date, Decimal]:
         daily_changes: dict[date, Decimal] = {}
 
@@ -120,7 +181,14 @@ class CashFlowService:
                 end=rule.end_date,
             )
 
-            amount = rule.amount if rule.type == "income" else -rule.amount
+            amount = rule.amount
+            if (
+                amount_change is not None
+                and rule.id_recurring_rule == amount_change.id_recurring_rule
+            ):
+                amount = amount_change.new_amount
+            if rule.type != "income":
+                amount = -amount
             for day in dates:
                 daily_changes[day] = daily_changes.get(day, Decimal("0.00")) + amount
 
