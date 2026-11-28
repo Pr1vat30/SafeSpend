@@ -76,9 +76,54 @@ class PlannedTransactionDAO:
         )
         return row.scalar_one_or_none()
 
+    async def confirm_income(self, planned: PlannedTransactionModel) -> PlannedTransactionModel:
+        """Confirm a pending income: register it as a real transaction and mark it recorded.
+
+        The transaction takes the planned date, like the expenses registered by the Scheduler.
+        `ON CONFLICT DO NOTHING` (unique `id_planned_transaction`) makes it idempotent.
+        """
+        await self.db.execute(
+            text(
+                'INSERT INTO "transaction" (id_user, id_category, id_planned_transaction, '
+                "  description, type, amount, transaction_date, origin) "
+                "VALUES (:uid, :cid, :pid, :descr, 'income', :amount, :tdate, 'planned') "
+                "ON CONFLICT (id_planned_transaction) DO NOTHING"
+            ),
+            {
+                "uid": planned.id_user,
+                "cid": planned.id_category,
+                "pid": planned.id_planned_transaction,
+                "descr": planned.description or planned.name,
+                "amount": planned.amount,
+                "tdate": planned.planned_date,
+            },
+        )
+        planned.status = "recorded"
+        return await self.save(planned)
+
+    async def reject_income(self, planned: PlannedTransactionModel) -> PlannedTransactionModel:
+        """Reject a pending income: mark as cancelled. Idempotent."""
+        if planned.status != "pending_confirmation":
+            return planned
+        planned.status = "cancelled"
+        return await self.save(planned)
+
     async def cancel_planned(self, planned: PlannedTransactionModel) -> PlannedTransactionModel:
         """Cancel a planned transaction (expense or income) before its date."""
         if planned.status in ("recorded", "cancelled"):
             return planned
         planned.status = "cancelled"
         return await self.save(planned)
+
+    async def list_pending_incomes_for_user(self, user_id: int) -> list[PlannedTransactionModel]:
+        """List pending confirmation incomes for the user (for the confirmation UI)."""
+        stmt = (
+            select(PlannedTransactionModel)
+            .where(
+                PlannedTransactionModel.id_user == user_id,
+                PlannedTransactionModel.status == "pending_confirmation",
+                PlannedTransactionModel.type == "income",
+            )
+            .order_by(PlannedTransactionModel.planned_date)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())

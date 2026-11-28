@@ -9,7 +9,9 @@ from app.api.controller.profile.dependencies import CurrentUser
 from app.api.dto.common.response import APIResponse
 from app.api.dto.planned_transaction.schema import (
     PlannedStatus,
+    PlannedTransactionConfirm,
     PlannedTransactionCreate,
+    PlannedTransactionPostpone,
     PlannedTransactionRead,
     PlannedTransactionUpdate,
     PlannedType,
@@ -52,6 +54,13 @@ async def list_planned(
     return APIResponse.ok(planned_list)
 
 
+@router.get("/pending-incomes", response_model=APIResponse[list[PlannedTransactionRead]])
+async def list_pending_incomes(user: CurrentUser, service: Service):
+    """List pending confirmation incomes for the current user."""
+    planned_list = await service.list_pending_incomes(user.id_user)
+    return APIResponse.ok(planned_list)
+
+
 @router.get("/{planned_id}", response_model=APIResponse[PlannedTransactionRead])
 async def get_planned(planned_id: int, user: CurrentUser, service: Service):
     planned = await service.get(user.id_user, planned_id)
@@ -66,6 +75,30 @@ async def update_planned(
     service: Service,
 ):
     planned = await service.update(user.id_user, planned_id, body)
+    return APIResponse.ok(planned)
+
+
+@router.post("/{planned_id}/confirm", response_model=APIResponse[PlannedTransactionRead])
+async def confirm_or_reject_income(
+    planned_id: int,
+    body: PlannedTransactionConfirm,
+    user: CurrentUser,
+    service: Service,
+):
+    """Confirm (confirm=true) or reject (confirm=false) a pending income."""
+    planned = await service.confirm_or_reject_income(user.id_user, planned_id, body.confirm)
+    return APIResponse.ok(planned)
+
+
+@router.post("/{planned_id}/postpone", response_model=APIResponse[PlannedTransactionRead])
+async def postpone_income(
+    planned_id: int,
+    body: PlannedTransactionPostpone,
+    user: CurrentUser,
+    service: Service,
+):
+    """Move a pending income to a new date ("Conferma l'incasso o sposta la data")."""
+    planned = await service.postpone_income(user.id_user, planned_id, body.new_date)
     return APIResponse.ok(planned)
 
 

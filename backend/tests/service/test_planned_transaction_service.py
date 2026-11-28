@@ -27,6 +27,7 @@ class FakeDAO:
 
     def __init__(self, category_types=None):
         self.planned = {}
+        self.transactions = []  # rows that the real DAO inserts into `transaction`
         self.category_types = (
             category_types
             if category_types is not None
@@ -67,9 +68,31 @@ class FakeDAO:
     async def get_category_type(self, cid, uid):
         return self.category_types.get(cid)
 
+    async def confirm_income(self, p):
+        self.transactions.append(
+            {
+                "id_planned_transaction": p.id_planned_transaction,
+                "type": "income",
+                "amount": p.amount,
+            }
+        )
+        p.status = "recorded"
+        return p
+
+    async def reject_income(self, p):
+        p.status = "cancelled"
+        return p
+
     async def cancel_planned(self, p):
         p.status = "cancelled"
         return p
+
+    async def list_pending_incomes_for_user(self, uid):
+        return [
+            p
+            for p in self.planned.values()
+            if p.id_user == uid and p.status == "pending_confirmation" and p.type == "income"
+        ]
 
 
 def make_service(dao=None):
@@ -262,7 +285,89 @@ async def test_delete_of_another_user_is_not_found():
     assert p.id_planned_transaction in service.dao.planned
 
 
-# -- 24-month limit (RF_CF_6) -------------------------------------------------------------
+# -- confirmation of incomes --------------------------------------------------------------
+
+
+async def test_confirm_income_creates_transaction():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation")
+    confirmed = await service.confirm_or_reject_income(
+        USER, pending.id_planned_transaction, confirm=True
+    )
+    assert confirmed.status == "recorded"
+    assert service.dao.transactions == [
+        {
+            "id_planned_transaction": pending.id_planned_transaction,
+            "type": "income",
+            "amount": Decimal("2000.00"),
+        }
+    ]
+
+
+async def test_reject_income_creates_no_transaction():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation")
+    rejected = await service.confirm_or_reject_income(
+        USER, pending.id_planned_transaction, confirm=False
+    )
+    assert rejected.status == "cancelled"
+    assert service.dao.transactions == []
+
+
+async def test_confirm_planned_expense_rejected():
+    service = make_service()
+    p = await service.create(USER, valid_create_data(type="expense"))
+    with pytest.raises(ConflictError, match="Solo gli incassi in attesa"):
+        await service.confirm_or_reject_income(USER, p.id_planned_transaction, confirm=True)
+
+
+async def test_confirm_twice_rejected():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation")
+    await service.confirm_or_reject_income(USER, pending.id_planned_transaction, confirm=True)
+    with pytest.raises(ConflictError):
+        await service.confirm_or_reject_income(USER, pending.id_planned_transaction, confirm=True)
+    assert len(service.dao.transactions) == 1
+
+
+async def test_confirm_income_of_another_user_is_not_found():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation", user=OTHER_USER)
+    with pytest.raises(NotFoundError):
+        await service.confirm_or_reject_income(USER, pending.id_planned_transaction, confirm=True)
+
+
+async def test_list_pending_incomes():
+    service = make_service()
+    await add_with_status(service, "pending_confirmation")
+    await add_with_status(service, "planned")
+    pending = await service.list_pending_incomes(USER)
+    assert [p.status for p in pending] == ["pending_confirmation"]
+
+
+# -- postponing a pending income and 24-month limit (RF_CF_6) -----------------------------
+
+
+async def test_postpone_pending_income_goes_back_to_planned():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation")
+    new_date = date(2026, 12, 5)
+    moved = await service.postpone_income(USER, pending.id_planned_transaction, new_date)
+    assert (moved.status, moved.planned_date) == ("planned", new_date)
+
+
+async def test_postpone_to_the_past_rejected():
+    service = make_service()
+    pending = await add_with_status(service, "pending_confirmation")
+    with pytest.raises(AppException, match="nel passato"):
+        await service.postpone_income(USER, pending.id_planned_transaction, date(2026, 11, 1))
+
+
+async def test_postpone_not_pending_rejected():
+    service = make_service()
+    p = await service.create(USER, valid_create_data(type="income", id_category=20))
+    with pytest.raises(ConflictError):
+        await service.postpone_income(USER, p.id_planned_transaction, date(2026, 12, 5))
 
 
 async def test_date_exactly_24_months_ahead_is_accepted():

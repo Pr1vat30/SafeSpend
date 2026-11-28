@@ -8,6 +8,9 @@ Life cycle of a planned transaction:
 
     planned ──(date reached, expense: Scheduler)────────────▶ recorded
     planned ──(date reached, income: Scheduler)──▶ pending_confirmation
+    pending_confirmation ──(user confirms)──▶ recorded   (a real income transaction is created)
+    pending_confirmation ──(user rejects)───▶ cancelled
+    pending_confirmation ──(user postpones)─▶ planned     (with a new future date)
     planned ──(user cancels)────────────────▶ cancelled
 """
 
@@ -32,6 +35,9 @@ CATEGORY_INCOMPATIBLE = "La categoria non è compatibile con il tipo del movimen
 DATE_IN_PAST = "La data del movimento pianificato non può essere nel passato"
 DATE_TOO_FAR = "La data del movimento pianificato deve essere entro 24 mesi da oggi"
 ONLY_PLANNED_EDITABLE = "Si può modificare solo un movimento ancora pianificato"
+ONLY_PENDING_INCOME = (
+    "Solo gli incassi in attesa di conferma possono essere confermati, rifiutati o rinviati"
+)
 ONLY_PLANNED_CANCELLABLE = (
     "Si può annullare solo un movimento ancora pianificato: "
     "per un incasso in attesa usa la conferma o il rifiuto"
@@ -75,6 +81,11 @@ class PlannedTransactionService:
         planned_list = await self.dao.list_by_user(user_id, status, type, date_from, date_to)
         return [PlannedTransactionRead.model_validate(p) for p in planned_list]
 
+    async def list_pending_incomes(self, user_id: int) -> list[PlannedTransactionRead]:
+        """Incomes whose date has come and that wait for the user's confirmation."""
+        planned_list = await self.dao.list_pending_incomes_for_user(user_id)
+        return [PlannedTransactionRead.model_validate(p) for p in planned_list]
+
     async def get(self, user_id: int, planned_id: int) -> PlannedTransactionRead:
         return PlannedTransactionRead.model_validate(await self._get_model(user_id, planned_id))
 
@@ -114,6 +125,33 @@ class PlannedTransactionService:
         if planned.status == "recorded":
             raise ConflictError(RECORDED_NOT_DELETABLE)
         await self.dao.delete(planned)
+
+    async def confirm_or_reject_income(
+        self, user_id: int, planned_id: int, confirm: bool
+    ) -> PlannedTransactionRead:
+        """Confirm (a real income transaction is created) or reject a pending income."""
+        planned = await self._get_model(user_id, planned_id)
+        if planned.type != "income" or planned.status != "pending_confirmation":
+            raise ConflictError(ONLY_PENDING_INCOME)
+
+        if confirm:
+            planned = await self.dao.confirm_income(planned)
+        else:
+            planned = await self.dao.reject_income(planned)
+        return PlannedTransactionRead.model_validate(planned)
+
+    async def postpone_income(
+        self, user_id: int, planned_id: int, new_date: date
+    ) -> PlannedTransactionRead:
+        """Move a pending income to a new date: it goes back into the projection (RF_CF_6)."""
+        planned = await self._get_model(user_id, planned_id)
+        if planned.type != "income" or planned.status != "pending_confirmation":
+            raise ConflictError(ONLY_PENDING_INCOME)
+        self._check_date(new_date)
+        planned.planned_date = new_date
+        planned.status = "planned"
+        planned = await self.dao.save(planned)
+        return PlannedTransactionRead.model_validate(planned)
 
     # -- helpers -----------------------------------------------------------------------------
 

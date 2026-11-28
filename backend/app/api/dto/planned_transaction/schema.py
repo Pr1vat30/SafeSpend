@@ -46,6 +46,18 @@ class PlannedTransactionUpdate(BaseModel):
         return self
 
 
+class PlannedTransactionConfirm(BaseModel):
+    """Request body for confirming or rejecting a pending income."""
+
+    confirm: bool
+
+
+class PlannedTransactionPostpone(BaseModel):
+    """Request body for moving a pending income to a new date."""
+
+    new_date: date
+
+
 class PlannedTransactionRead(BaseModel):
     """Response body. `from_attributes` allows validating ORM objects directly."""
 
