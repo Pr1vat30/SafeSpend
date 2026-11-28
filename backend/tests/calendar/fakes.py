@@ -1,4 +1,4 @@
-"""Test data and fake DAO shared by the calendar tests (RF_CG_1)."""
+"""Test data and stub DAO shared by the calendar tests (RF_CG_1)."""
 
 from datetime import date
 from decimal import Decimal

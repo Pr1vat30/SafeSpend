@@ -2,6 +2,21 @@
 
 Each test runs in a transaction that is rolled back, so the database is left unchanged. Without a
 reachable database the tests are skipped locally, and fail in the CI (where `CI` is set).
+
+Category Partition specification (RNF_OP_1) of `find_active_rules` / `find_planned`:
+
+Environment (rows in the database)
+  rule status         active | suspended [single] | terminated [single]
+  rule period         inside | starts on the last day | ends on the first day | starts later
+                      | already ended
+  rule type           income | expense | saving
+  planned status      planned | pending_confirmation | recorded | cancelled [single]
+  planned date        first day | inside | last day | before | after the month
+  owner               requested user | another user (RNF_SE_3)
+
+Test frames
+  TF01 rules: every status, period and type     TF02 planned: every status and date
+  TF03 owner: only the requested user
 """
 
 import os
@@ -94,7 +109,7 @@ async def add_planned(db, user, name, *, planned_date, status="planned", type="e
     )
 
 
-async def test_find_active_rules_keeps_only_the_active_rules_of_the_period(db, user):
+async def test_tf01_find_active_rules_keeps_only_the_active_rules_of_the_period(db, user):
     await add_rule(db, user, "Palestra", first=date(2026, 11, 10))
     await add_rule(db, user, "Stipendio", type="income", first=date(2026, 10, 27))
     await add_rule(db, user, "Inizia a fine mese", first=date(2026, 12, 31))
@@ -122,7 +137,7 @@ async def test_find_active_rules_keeps_only_the_active_rules_of_the_period(db, u
     assert gym.category_name == "Salute e Fitness"
 
 
-async def test_find_planned_keeps_the_movements_of_the_period_except_cancelled(db, user):
+async def test_tf02_find_planned_keeps_the_movements_of_the_period_except_cancelled(db, user):
     await add_planned(db, user, "Dentista", planned_date=date(2026, 12, 20))
     await add_planned(db, user, "Primo del mese", planned_date=date(2026, 12, 1))
     await add_planned(db, user, "Ultimo del mese", planned_date=date(2026, 12, 31))
@@ -155,7 +170,7 @@ async def test_find_planned_keeps_the_movements_of_the_period_except_cancelled(d
     assert dentist.category_name == "Salute e Fitness"
 
 
-async def test_queries_return_only_the_movements_of_the_requested_user(db, user):
+async def test_tf03_queries_return_only_the_movements_of_the_requested_user(db, user):
     await add_rule(db, user, "Palestra", first=date(2026, 11, 10))
     await add_planned(db, user, "Dentista", planned_date=date(2026, 12, 20))
     other_id = await insert(
